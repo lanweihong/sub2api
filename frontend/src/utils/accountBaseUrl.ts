@@ -1,6 +1,7 @@
 import type { AccountPlatform } from '@/types'
 
 const anthropicCompatDefaultBaseUrls: Partial<Record<AccountPlatform, string>> = {
+  'anthropic-compatible': '',
   'anthropic-zhipu': 'https://open.bigmodel.cn/api/anthropic',
   'anthropic-kimi': 'https://api.moonshot.cn',
   'anthropic-minimax': 'https://api.minimax.chat',
@@ -9,7 +10,11 @@ const anthropicCompatDefaultBaseUrls: Partial<Record<AccountPlatform, string>> =
 }
 
 export function isAnthropicCompatPlatform(platform?: string | null): platform is AccountPlatform {
-  return typeof platform === 'string' && platform.startsWith('anthropic-')
+  return typeof platform === 'string' && (platform === 'anthropic-compatible' || platform.startsWith('anthropic-'))
+}
+
+export function requiresExplicitApiKeyBaseUrl(platform?: AccountPlatform | string | null): boolean {
+  return !!platform && isAnthropicCompatPlatform(platform) && getDefaultApiKeyBaseUrl(platform) === ''
 }
 
 export function getDefaultApiKeyBaseUrl(platform?: AccountPlatform | string | null): string {
