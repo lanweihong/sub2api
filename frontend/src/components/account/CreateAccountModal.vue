@@ -944,10 +944,10 @@
       </div>
 
       <!-- API Key input (only for apikey type, excluding Antigravity which has its own fields) -->
-      <!-- 国内厂商 Anthropic-compatible 渠道：显示说明提示 -->
-      <div v-if="form.platform && form.platform.startsWith('anthropic-')" class="rounded-lg bg-amber-50 p-3 dark:bg-amber-900/20">
+      <!-- Anthropic-compatible 渠道：显示说明提示 -->
+      <div v-if="isAnthropicCompatPlatform(form.platform)" class="rounded-lg bg-amber-50 p-3 dark:bg-amber-900/20">
         <p class="text-xs text-amber-700 dark:text-amber-400">
-          {{ t('admin.accounts.anthropicCompat.note') }}
+          {{ requiresExplicitApiKeyBaseUrl(form.platform) ? t('admin.accounts.anthropicCompat.explicitBaseUrlNote') : t('admin.accounts.anthropicCompat.note') }}
         </p>
       </div>
       <div v-if="form.type === 'apikey' && form.platform !== 'antigravity'" class="space-y-4">
@@ -962,7 +962,9 @@
                 ? 'https://api.openai.com'
                 : form.platform === 'gemini'
                   ? 'https://generativelanguage.googleapis.com'
-                  : isAnthropicCompatPlatform(form.platform)
+                  : requiresExplicitApiKeyBaseUrl(form.platform)
+                    ? t('admin.accounts.anthropicCompat.explicitBaseUrlPlaceholder')
+                    : isAnthropicCompatPlatform(form.platform)
                     ? t('admin.accounts.anthropicCompat.baseUrlPlaceholder')
                     : 'https://api.anthropic.com'
             "
@@ -2948,7 +2950,7 @@ import {
   resolveOpenAIWSModeConcurrencyHintKey,
   type OpenAIWSMode
 } from '@/utils/openaiWsMode'
-import { getDefaultApiKeyBaseUrl, isAnthropicCompatPlatform } from '@/utils/accountBaseUrl'
+import { getDefaultApiKeyBaseUrl, isAnthropicCompatPlatform, requiresExplicitApiKeyBaseUrl } from '@/utils/accountBaseUrl'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -2981,6 +2983,7 @@ const oauthStepTitle = computed(() => {
 const baseUrlHint = computed(() => {
   if (form.platform === 'openai' || form.platform === 'sora') return t('admin.accounts.openai.baseUrlHint')
   if (form.platform === 'gemini') return t('admin.accounts.gemini.baseUrlHint')
+  if (requiresExplicitApiKeyBaseUrl(form.platform)) return t('admin.accounts.anthropicCompat.explicitBaseUrlHint')
   if (isAnthropicCompatPlatform(form.platform)) return t('admin.accounts.anthropicCompat.baseUrlHint')
   return t('admin.accounts.baseUrlHint')
 })
@@ -3008,11 +3011,12 @@ const appStore = useAppStore()
 
 // 国内厂商 Anthropic-compatible 平台列表（供 UI 渲染使用）
 const anthropicCompatPlatforms = [
-  { value: 'anthropic-zhipu' as AccountPlatform, label: t('admin.accounts.platforms.anthropicZhipu') },
-  { value: 'anthropic-kimi' as AccountPlatform, label: t('admin.accounts.platforms.anthropicKimi') },
-  { value: 'anthropic-minimax' as AccountPlatform, label: t('admin.accounts.platforms.anthropicMinimax') },
-  { value: 'anthropic-qwen' as AccountPlatform, label: t('admin.accounts.platforms.anthropicQwen') },
-  { value: 'anthropic-mimo' as AccountPlatform, label: t('admin.accounts.platforms.anthropicMimo') },
+  { value: 'anthropic-compatible' as AccountPlatform, label: t('admin.accounts.platforms.anthropic-compatible') },
+  { value: 'anthropic-zhipu' as AccountPlatform, label: t('admin.accounts.platforms.anthropic-zhipu') },
+  { value: 'anthropic-kimi' as AccountPlatform, label: t('admin.accounts.platforms.anthropic-kimi') },
+  { value: 'anthropic-minimax' as AccountPlatform, label: t('admin.accounts.platforms.anthropic-minimax') },
+  { value: 'anthropic-qwen' as AccountPlatform, label: t('admin.accounts.platforms.anthropic-qwen') },
+  { value: 'anthropic-mimo' as AccountPlatform, label: t('admin.accounts.platforms.anthropic-mimo') },
 ]
 
 // OAuth composables
@@ -4118,10 +4122,16 @@ const handleSubmit = async () => {
 
   // Determine default base URL based on platform
   const defaultBaseUrl = getDefaultApiKeyBaseUrl(form.platform)
+  const apiKeyBaseUrlValue = apiKeyBaseUrl.value.trim() || defaultBaseUrl
+
+  if (requiresExplicitApiKeyBaseUrl(form.platform) && !apiKeyBaseUrlValue) {
+    appStore.showError(t('admin.accounts.anthropicCompat.explicitBaseUrlRequired'))
+    return
+  }
 
   // Build credentials with optional model mapping
   const credentials: Record<string, unknown> = {
-    base_url: apiKeyBaseUrl.value.trim() || defaultBaseUrl,
+    base_url: apiKeyBaseUrlValue,
     api_key: apiKeyValue.value.trim()
   }
   if (form.platform === 'gemini') {

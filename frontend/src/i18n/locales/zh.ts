@@ -1648,6 +1648,7 @@ export default {
         gemini: 'Gemini',
         antigravity: 'Antigravity',
         sora: 'Sora',
+        'anthropic-compatible': '其他 (Anthropic-compatible)',
         'anthropic-zhipu': '智谱 GLM (Anthropic-compatible)',
         'anthropic-kimi': 'Kimi / 月之暗面 (Anthropic-compatible)',
         'anthropic-minimax': 'MiniMax (Anthropic-compatible)',
@@ -2110,6 +2111,7 @@ export default {
         gemini: 'Gemini',
         antigravity: 'Antigravity',
         sora: 'Sora',
+        'anthropic-compatible': '其他 (Anthropic-compatible)',
         'anthropic-zhipu': '智谱 GLM',
         'anthropic-kimi': 'Kimi / 月之暗面',
         'anthropic-minimax': 'MiniMax',
@@ -2330,10 +2332,14 @@ export default {
       // 国内厂商 Anthropic-compatible 渠道专属提示
       anthropicCompat: {
         baseUrlPlaceholder: '留空使用平台默认上游地址',
+        explicitBaseUrlPlaceholder: 'https://example.com',
         apiKeyPlaceholder: '请输入 API Key',
         baseUrlHint: '留空使用平台默认上游地址；如需自定义中转/代理，再填写覆盖地址',
+        explicitBaseUrlHint: '请填写兼容 Anthropic Messages 协议的上游地址（Base URL）',
+        explicitBaseUrlRequired: '“其他 (Anthropic-compatible)”账号必须设置 Base URL',
         apiKeyHint: '对应厂商颁发的 API Key',
         note: '此渠道类型仅支持 API Key 认证，无需 OAuth 授权',
+        explicitBaseUrlNote: '此渠道类型仅支持 API Key 认证，且必须手动填写兼容 Anthropic Messages 协议的 Base URL',
       },
       // OpenAI specific hints
       openai: {

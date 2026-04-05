@@ -55,6 +55,7 @@
 <script setup lang="ts">
 import Icon from '@/components/icons/Icon.vue'
 import type { AccountPlatform, AccountType } from '@/types'
+import { isAnthropicCompatPlatform } from '@/utils/accountBaseUrl'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PlatformIcon from './PlatformIcon.vue'
@@ -76,12 +77,12 @@ const platformLabel = computed(() => {
   if (props.platform === 'openai') return 'OpenAI'
   if (props.platform === 'antigravity') return 'Antigravity'
   if (props.platform === 'sora') return 'Sora'
-  // 自定义 Anthropic-compatible 渠道（国内厂商）
-  if (props.platform === 'anthropic-zhipu') return '智谱 GLM'
-  if (props.platform === 'anthropic-kimi') return 'Kimi'
-  if (props.platform === 'anthropic-minimax') return 'MiniMax'
-  if (props.platform === 'anthropic-qwen') return '千问'
-  if (props.platform === 'anthropic-mimo') return 'MiMo'
+  if (props.platform === 'anthropic-compatible') return t('admin.accounts.platforms.anthropic-compatible')
+  if (props.platform === 'anthropic-zhipu') return t('admin.accounts.platforms.anthropic-zhipu')
+  if (props.platform === 'anthropic-kimi') return t('admin.accounts.platforms.anthropic-kimi')
+  if (props.platform === 'anthropic-minimax') return t('admin.accounts.platforms.anthropic-minimax')
+  if (props.platform === 'anthropic-qwen') return t('admin.accounts.platforms.anthropic-qwen')
+  if (props.platform === 'anthropic-mimo') return t('admin.accounts.platforms.anthropic-mimo')
   return 'Gemini'
 })
 
@@ -133,8 +134,7 @@ const platformClass = computed(() => {
   if (props.platform === 'sora') {
     return 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
   }
-  // 自定义 Anthropic-compatible 渠道（国内厂商）使用琥珀色与官方 Anthropic 区分
-  if (props.platform && props.platform.startsWith('anthropic-')) {
+  if (isAnthropicCompatPlatform(props.platform)) {
     return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
   }
   return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
@@ -153,8 +153,7 @@ const typeClass = computed(() => {
   if (props.platform === 'sora') {
     return 'bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400'
   }
-  // 自定义 Anthropic-compatible 渠道使用琥珀色
-  if (props.platform && props.platform.startsWith('anthropic-')) {
+  if (isAnthropicCompatPlatform(props.platform)) {
     return 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'
   }
   return 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'

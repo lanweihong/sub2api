@@ -1611,6 +1611,7 @@ export default {
         gemini: 'Gemini',
         antigravity: 'Antigravity',
         sora: 'Sora',
+        'anthropic-compatible': 'Other (Anthropic-compatible)',
         'anthropic-zhipu': 'Zhipu GLM (Anthropic-compatible)',
         'anthropic-kimi': 'Kimi / Moonshot (Anthropic-compatible)',
         'anthropic-minimax': 'MiniMax (Anthropic-compatible)',
@@ -1929,6 +1930,7 @@ export default {
         gemini: 'Gemini',
         antigravity: 'Antigravity',
         sora: 'Sora',
+        'anthropic-compatible': 'Other (Anthropic-compatible)',
         'anthropic-zhipu': 'Zhipu GLM',
         'anthropic-kimi': 'Kimi / Moonshot',
         'anthropic-minimax': 'MiniMax',
@@ -2173,10 +2175,14 @@ export default {
       // Custom Anthropic-compatible channel (domestic vendors)
       anthropicCompat: {
         baseUrlPlaceholder: 'Leave blank to use the platform default upstream URL',
+        explicitBaseUrlPlaceholder: 'https://example.com',
         apiKeyPlaceholder: 'Enter API Key',
         baseUrlHint: 'Leave blank to use the platform default upstream URL, or override it for a custom relay/proxy',
+        explicitBaseUrlHint: 'Provide the Base URL for an upstream compatible with Anthropic Messages.',
+        explicitBaseUrlRequired: 'Other (Anthropic-compatible) accounts require a Base URL',
         apiKeyHint: 'API Key issued by the provider',
         note: 'This channel type only supports API Key authentication, no OAuth required',
+        explicitBaseUrlNote: 'This channel type only supports API Key authentication and requires you to provide a compatible Anthropic Messages Base URL.',
       },
       // OpenAI specific hints
       openai: {

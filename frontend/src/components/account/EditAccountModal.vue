@@ -41,7 +41,9 @@
                   ? 'https://generativelanguage.googleapis.com'
                   : account.platform === 'antigravity'
                     ? 'https://cloudcode-pa.googleapis.com'
-                    : isAnthropicCompatPlatform(account.platform)
+                    : requiresExplicitApiKeyBaseUrl(account.platform)
+                      ? t('admin.accounts.anthropicCompat.explicitBaseUrlPlaceholder')
+                      : isAnthropicCompatPlatform(account.platform)
                       ? getDefaultApiKeyBaseUrl(account.platform)
                       : 'https://api.anthropic.com'
             "
@@ -1764,7 +1766,7 @@ import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import { applyInterceptWarmup } from '@/components/account/credentialsBuilder'
 import { formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
-import { getDefaultApiKeyBaseUrl, isAnthropicCompatPlatform } from '@/utils/accountBaseUrl'
+import { getDefaultApiKeyBaseUrl, isAnthropicCompatPlatform, requiresExplicitApiKeyBaseUrl } from '@/utils/accountBaseUrl'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
 import {
   // OPENAI_WS_MODE_CTX_POOL,
@@ -1804,6 +1806,7 @@ const baseUrlHint = computed(() => {
   if (!props.account) return t('admin.accounts.baseUrlHint')
   if (props.account.platform === 'openai' || props.account.platform === 'sora') return t('admin.accounts.openai.baseUrlHint')
   if (props.account.platform === 'gemini') return t('admin.accounts.gemini.baseUrlHint')
+  if (requiresExplicitApiKeyBaseUrl(props.account.platform)) return t('admin.accounts.anthropicCompat.explicitBaseUrlHint')
   if (isAnthropicCompatPlatform(props.account.platform)) return t('admin.accounts.anthropicCompat.baseUrlHint')
   return t('admin.accounts.baseUrlHint')
 })
@@ -2300,7 +2303,7 @@ watch(
   { immediate: true }
 )
 
-const loadTLSProfiles = async () => {
+async function loadTLSProfiles() {
   try {
     const profiles = await adminAPI.tlsFingerprintProfiles.list()
     tlsFingerprintProfiles.value = profiles.map(p => ({ id: p.id, name: p.name }))
@@ -2739,6 +2742,11 @@ const handleSubmit = async () => {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
       const newBaseUrl = editBaseUrl.value.trim() || defaultBaseUrl.value
       const shouldApplyModelMapping = !(props.account.platform === 'openai' && openaiPassthroughEnabled.value)
+
+      if (requiresExplicitApiKeyBaseUrl(props.account.platform) && !newBaseUrl) {
+        appStore.showError(t('admin.accounts.anthropicCompat.explicitBaseUrlRequired'))
+        return
+      }
 
       // Always update credentials for apikey type to handle model mapping changes
       const newCredentials: Record<string, unknown> = {

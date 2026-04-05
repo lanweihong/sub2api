@@ -2003,7 +2003,7 @@ const platformOptions = computed(() => [
   { value: 'gemini', label: 'Gemini' },
   { value: 'antigravity', label: 'Antigravity' },
   { value: 'sora', label: 'Sora' },
-  // 自定义 Anthropic-compatible 渠道（国内厂商）
+  { value: 'anthropic-compatible', label: t('admin.groups.platforms.anthropic-compatible') },
   { value: 'anthropic-zhipu', label: t('admin.groups.platforms.anthropic-zhipu') },
   { value: 'anthropic-kimi', label: t('admin.groups.platforms.anthropic-kimi') },
   { value: 'anthropic-minimax', label: t('admin.groups.platforms.anthropic-minimax') },
@@ -2018,7 +2018,7 @@ const platformFilterOptions = computed(() => [
   { value: 'gemini', label: 'Gemini' },
   { value: 'antigravity', label: 'Antigravity' },
   { value: 'sora', label: 'Sora' },
-  // 自定义 Anthropic-compatible 渠道（国内厂商）
+  { value: 'anthropic-compatible', label: t('admin.groups.platforms.anthropic-compatible') },
   { value: 'anthropic-zhipu', label: t('admin.groups.platforms.anthropic-zhipu') },
   { value: 'anthropic-kimi', label: t('admin.groups.platforms.anthropic-kimi') },
   { value: 'anthropic-minimax', label: t('admin.groups.platforms.anthropic-minimax') },
