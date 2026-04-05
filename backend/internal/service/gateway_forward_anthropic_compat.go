@@ -60,10 +60,7 @@ func (s *GatewayService) ForwardAnthropicCompat(
 	}
 
 	// 4. 构造上游 URL：优先使用账号配置的 base_url，否则使用 spec.DefaultBaseURL
-	baseURL := strings.TrimSpace(account.GetCredential("base_url"))
-	if baseURL == "" {
-		baseURL = spec.DefaultBaseURL
-	}
+	baseURL := resolveAnthropicCompatBaseURL(account.GetCredential("base_url"), spec)
 	validatedBaseURL, err := s.validateUpstreamBaseURL(baseURL)
 	if err != nil {
 		return nil, writeAnthropicCompatError(c, http.StatusBadGateway,
