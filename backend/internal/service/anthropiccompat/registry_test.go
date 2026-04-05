@@ -125,3 +125,24 @@ func TestDefaultModelsForUnregisteredPlatform(t *testing.T) {
 		t.Fatalf("未注册平台应返回 nil，但返回了 %v", models)
 	}
 }
+
+func TestZhipuProviderDefaults(t *testing.T) {
+	spec, ok := anthropiccompat.Resolve("anthropic-zhipu")
+	if !ok || spec == nil {
+		t.Fatal("anthropic-zhipu 未注册")
+	}
+
+	if spec.DefaultBaseURL != "https://open.bigmodel.cn/api/anthropic" {
+		t.Fatalf("DefaultBaseURL = %q，期望 %q", spec.DefaultBaseURL, "https://open.bigmodel.cn/api/anthropic")
+	}
+	if got := spec.MessagesEndpointPath(); got != "/v1/messages" {
+		t.Fatalf("MessagesEndpointPath() = %q，期望 %q", got, "/v1/messages")
+	}
+	name, value := spec.ResolveAuthHeader("test-key")
+	if name != "x-api-key" {
+		t.Fatalf("auth header name = %q，期望 %q", name, "x-api-key")
+	}
+	if value != "test-key" {
+		t.Fatalf("auth header value = %q，期望 %q", value, "test-key")
+	}
+}

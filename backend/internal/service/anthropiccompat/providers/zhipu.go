@@ -6,13 +6,14 @@ import (
 
 func init() {
 	anthropiccompat.Register(&anthropiccompat.ProviderSpec{
-		Platform:    "anthropic-zhipu",
-		DisplayName: "智谱 AI (Anthropic-compatible)",
-		DefaultBaseURL: "https://open.bigmodel.cn",
-		MessagesPath:   "/api/paas/v4/messages",
-		AuthMode:       anthropiccompat.AuthModeAPIKey,
-		DefaultHeaders: map[string]string{},
-		SupportsStreaming:    true,
+		Platform:            "anthropic-zhipu",
+		DisplayName:         "智谱 AI (Anthropic-compatible)",
+		DefaultBaseURL:      "https://open.bigmodel.cn/api/anthropic",
+		MessagesPath:        "/v1/messages",
+		AuthMode:            anthropiccompat.AuthModeAPIKey,
+		AuthHeaderName:      "x-api-key",
+		DefaultHeaders:      map[string]string{},
+		SupportsStreaming:   true,
 		SupportsTools:       true,
 		SupportsThinking:    false,
 		SupportsCountTokens: false,
