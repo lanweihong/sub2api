@@ -421,6 +421,11 @@ func (s *AccountService) TestCredentials(ctx context.Context, id int64) error {
 		// TODO: 测试Gemini API凭证
 		return nil
 	default:
+		// 自定义 Anthropic-compatible 渠道（anthropic-zhipu、anthropic-kimi 等）
+		if IsAnthropicCompatPlatform(account.Platform) {
+			// 连接测试由 AccountTestService 统一处理（调用方已验证渠道注册及凭证有效性）
+			return nil
+		}
 		return fmt.Errorf("unsupported platform: %s", account.Platform)
 	}
 }

@@ -24,6 +24,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
+	"github.com/Wei-Shaw/sub2api/internal/service/anthropiccompat"
+	// 触发所有 Anthropic-compatible 渠道 Provider 的 init() 注册
+	_ "github.com/Wei-Shaw/sub2api/internal/service/anthropiccompat/providers"
 	"github.com/Wei-Shaw/sub2api/internal/util/soraerror"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/gin-gonic/gin"
@@ -199,6 +202,12 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 
 	if account.Platform == PlatformSora {
 		return s.testSoraAccountConnection(c, account)
+	}
+
+	// 自定义 Anthropic-compatible 渠道（anthropic-zhipu、anthropic-kimi、anthropic-minimax 等）
+	// 使用简化版连接测试，只需验证 API Key 和 base_url 能够正常收到响应
+	if IsAnthropicCompatPlatform(account.Platform) {
+		return s.testAnthropicCompatAccountConnection(c, account, modelID)
 	}
 
 	return s.testClaudeAccountConnection(c, account, modelID)
@@ -1823,4 +1832,132 @@ func parseTestSSEOutput(body string) (responseText, errMsg string) {
 	}
 	responseText = strings.Join(texts, "")
 	return
+}
+
+// testAnthropicCompatAccountConnection 测试自定义 Anthropic-compatible 渠道账号连接。
+//
+// 与官方 Anthropic 测试不同，此方法：
+//   - 只使用 APIKey 认证，不走 OAuth 流程
+//   - 直接向渠道提供商的 /v1/messages 端点发送最小测试请求
+//   - 通过 Provider Registry 获取渠道规格（base_url、auth_header 等）
+func (s *AccountTestService) testAnthropicCompatAccountConnection(c *gin.Context, account *Account, modelID string) error {
+	ctx := c.Request.Context()
+
+	// 解析渠道规格（必须已注册，否则配置错误）
+	spec, ok := anthropiccompat.Resolve(account.Platform)
+	if !ok {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("未知的 Anthropic-compatible 平台: %s", account.Platform))
+	}
+
+	// 获取 API Key
+	apiKey := strings.TrimSpace(account.GetCredential("api_key"))
+	if apiKey == "" {
+		return s.sendErrorAndEnd(c, "未配置 api_key")
+	}
+
+	// 获取 base_url（优先账号配置，其次渠道默认）
+	baseURL := strings.TrimSpace(account.GetCredential("base_url"))
+	if baseURL == "" {
+		baseURL = spec.DefaultBaseURL
+	}
+	normalizedBaseURL, err := s.validateUpstreamBaseURL(baseURL)
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("无效的 base_url: %s", err.Error()))
+	}
+
+	// 确定测试模型（优先入参，其次 spec 第一个默认模型，最后回退）
+	testModel := modelID
+	if testModel == "" && len(spec.DefaultModels) > 0 {
+		testModel = spec.DefaultModels[0]
+	}
+	if testModel == "" {
+		testModel = "claude-3-5-haiku-20241022" // 通用回退
+	}
+	testModel = account.GetMappedModel(testModel)
+
+	// 构造最小测试请求体
+	testPayload := map[string]any{
+		"model":      testModel,
+		"max_tokens": 10,
+		"messages": []map[string]string{
+			{"role": "user", "content": "Hi"},
+		},
+		"stream": false,
+	}
+	payloadBytes, _ := json.Marshal(testPayload)
+
+	// 构造请求 URL
+	apiURL := strings.TrimRight(normalizedBaseURL, "/") + spec.MessagesEndpointPath()
+
+	// 设置 SSE 响应头
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("X-Accel-Buffering", "no")
+	c.Writer.Flush()
+
+	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModel})
+
+	// 构造 HTTP 请求
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(payloadBytes))
+	if err != nil {
+		return s.sendErrorAndEnd(c, "构造请求失败")
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("anthropic-version", spec.AnthropicVersionHeader())
+	authHeaderName, authHeaderValue := spec.ResolveAuthHeader(apiKey)
+	req.Header.Set(authHeaderName, authHeaderValue)
+	for k, v := range spec.DefaultHeaders {
+		req.Header.Set(k, v)
+	}
+
+	// 代理支持
+	proxyURL := ""
+	if account.ProxyID != nil && account.Proxy != nil {
+		proxyURL = account.Proxy.URL()
+	}
+
+	// 发送请求
+	resp, err := s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
+	if err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("请求失败: %s", sanitizeUpstreamErrorMessage(err.Error())))
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+
+	if resp.StatusCode >= 400 {
+		errMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
+		if errMsg == "" {
+			errMsg = fmt.Sprintf("HTTP %d", resp.StatusCode)
+		}
+		return s.sendErrorAndEnd(c, fmt.Sprintf("连接测试失败 (%d): %s", resp.StatusCode, errMsg))
+	}
+
+	// 提取响应文本
+	responseText := extractTestResponseText(respBody)
+	s.sendEvent(c, TestEvent{Type: "content", Text: responseText})
+	s.sendEvent(c, TestEvent{Type: "done"})
+	return nil
+}
+
+// extractTestResponseText 从非流式 Anthropic 响应中提取文本内容。
+func extractTestResponseText(body []byte) string {
+	type content struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	type resp struct {
+		Content []content `json:"content"`
+	}
+	var r resp
+	if err := json.Unmarshal(body, &r); err != nil {
+		return string(body)
+	}
+	for _, c := range r.Content {
+		if c.Type == "text" && c.Text != "" {
+			return c.Text
+		}
+	}
+	return ""
 }
