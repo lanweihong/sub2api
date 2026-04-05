@@ -1647,9 +1647,13 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
-        sora: 'Sora'
+        sora: 'Sora',
+        'anthropic-zhipu': '智谱 GLM (Anthropic-compatible)',
+        'anthropic-kimi': 'Kimi / 月之暗面 (Anthropic-compatible)',
+        'anthropic-minimax': 'MiniMax (Anthropic-compatible)',
+        'anthropic-qwen': '通义千问 (Anthropic-compatible)',
+        'anthropic-mimo': '小米 MiMo (Anthropic-compatible)'
       },
-      saving: '保存中...',
       noGroups: '暂无分组',
       noGroupsDescription: '创建分组以更好地管理 API 密钥和费率。',
       groupCreatedSuccess: '分组创建成功',
@@ -2105,7 +2109,12 @@ export default {
         anthropic: 'Anthropic',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
-        sora: 'Sora'
+        sora: 'Sora',
+        'anthropic-zhipu': '智谱 GLM',
+        'anthropic-kimi': 'Kimi / 月之暗面',
+        'anthropic-minimax': 'MiniMax',
+        'anthropic-qwen': '通义千问',
+        'anthropic-mimo': '小米 MiMo'
       },
       types: {
         oauth: 'OAuth',
@@ -2318,6 +2327,14 @@ export default {
       apiKeyRequired: 'API Key *',
       apiKeyPlaceholder: 'sk-ant-api03-...',
       apiKeyHint: '您的 Claude Console API Key',
+      // 国内厂商 Anthropic-compatible 渠道专属提示
+      anthropicCompat: {
+        baseUrlPlaceholder: '请输入上游 API 地址（必填）',
+        apiKeyPlaceholder: '请输入 API Key',
+        baseUrlHint: '自定义渠道必须填写正确的上游 API 地址',
+        apiKeyHint: '对应厂商颁发的 API Key',
+        note: '此渠道类型仅支持 API Key 认证，无需 OAuth 授权',
+      },
       // OpenAI specific hints
       openai: {
         baseUrlHint: '留空使用官方 OpenAI API',

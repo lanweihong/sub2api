@@ -1610,7 +1610,12 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
-        sora: 'Sora'
+        sora: 'Sora',
+        'anthropic-zhipu': 'Zhipu GLM (Anthropic-compatible)',
+        'anthropic-kimi': 'Kimi / Moonshot (Anthropic-compatible)',
+        'anthropic-minimax': 'MiniMax (Anthropic-compatible)',
+        'anthropic-qwen': 'Qwen / Tongyi (Anthropic-compatible)',
+        'anthropic-mimo': 'Xiaomi MiMo (Anthropic-compatible)'
       },
       deleteConfirm:
         "Are you sure you want to delete '{name}'? All associated API keys will no longer belong to any group.",
@@ -1923,16 +1928,14 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
-        sora: 'Sora'
+        sora: 'Sora',
+        'anthropic-zhipu': 'Zhipu GLM',
+        'anthropic-kimi': 'Kimi / Moonshot',
+        'anthropic-minimax': 'MiniMax',
+        'anthropic-qwen': 'Qwen / Tongyi',
+        'anthropic-mimo': 'Xiaomi MiMo'
       },
       types: {
-        oauth: 'OAuth',
-        chatgptOauth: 'ChatGPT OAuth',
-        responsesApi: 'Responses API',
-        googleOauth: 'Google OAuth',
-        codeAssist: 'Code Assist',
-        antigravityOauth: 'Antigravity OAuth',
-        antigravityApikey: 'Connect via Base URL + API Key',
         soraApiKey: 'API Key / Upstream',
         soraApiKeyHint: 'Connect to another Sub2API or compatible API',
         soraBaseUrlRequired: 'Sora API Key account requires a Base URL',
@@ -2167,6 +2170,14 @@ export default {
       apiKeyRequired: 'API Key *',
       apiKeyPlaceholder: 'sk-ant-api03-...',
       apiKeyHint: 'Your Claude Console API Key',
+      // Custom Anthropic-compatible channel (domestic vendors)
+      anthropicCompat: {
+        baseUrlPlaceholder: 'Enter upstream API base URL (required)',
+        apiKeyPlaceholder: 'Enter API Key',
+        baseUrlHint: 'Custom channels must specify the upstream API base URL',
+        apiKeyHint: 'API Key issued by the provider',
+        note: 'This channel type only supports API Key authentication, no OAuth required',
+      },
       // OpenAI specific hints
       openai: {
         baseUrlHint: 'Leave default for official OpenAI API',
