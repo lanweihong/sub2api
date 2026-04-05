@@ -13,6 +13,7 @@ func TestIsAnthropicCompatPlatform(t *testing.T) {
 		desc     string
 	}{
 		// 自定义 Anthropic-compatible 渠道应返回 true
+		{PlatformAnthropicCompatible, true, "通用兼容渠道"},
 		{PlatformAnthropicZhipu, true, "智谱 GLM 渠道"},
 		{PlatformAnthropicKimi, true, "Kimi/Moonshot 渠道"},
 		{PlatformAnthropicMinimax, true, "MiniMax 渠道"},
@@ -51,6 +52,7 @@ func TestAnthropicCompatPlatformConstants(t *testing.T) {
 	t.Parallel()
 
 	compatPlatforms := []string{
+		PlatformAnthropicCompatible,
 		PlatformAnthropicZhipu,
 		PlatformAnthropicKimi,
 		PlatformAnthropicMinimax,

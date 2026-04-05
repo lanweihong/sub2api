@@ -26,6 +26,9 @@ const (
 	PlatformAntigravity = "antigravity"
 	PlatformSora        = "sora"
 
+	// 通用 Anthropic-compatible 平台，用于承接未内置的兼容渠道。
+	PlatformAnthropicCompatible = "anthropic-compatible"
+
 	// 自定义 Anthropic-compatible 渠道（国内厂商）
 	// 命名约定："anthropic-" 前缀 + 厂商标识，例如 "anthropic-zhipu"。
 	// 这些平台走新旁路封装层，不影响官方 anthropic 的原有逻辑。
@@ -40,11 +43,11 @@ const (
 	AnthropicCompatPrefix = "anthropic-"
 )
 
-// IsAnthropicCompatPlatform 判断给定平台是否为自定义 Anthropic-compatible 渠道。
-// 例如 "anthropic-zhipu"、"anthropic-kimi" 均返回 true；
+// IsAnthropicCompatPlatform 判断给定平台是否为 Anthropic-compatible 渠道。
+// 例如 "anthropic-compatible"、"anthropic-zhipu"、"anthropic-kimi" 均返回 true；
 // 官方 "anthropic" 平台返回 false，仍走原有 GatewayService 链路。
 func IsAnthropicCompatPlatform(platform string) bool {
-	return strings.HasPrefix(platform, AnthropicCompatPrefix)
+	return platform == PlatformAnthropicCompatible || strings.HasPrefix(platform, AnthropicCompatPrefix)
 }
 
 // Account type constants

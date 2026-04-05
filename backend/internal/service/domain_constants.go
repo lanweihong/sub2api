@@ -26,6 +26,8 @@ const (
 	PlatformAntigravity = domain.PlatformAntigravity
 	PlatformSora        = domain.PlatformSora
 
+	PlatformAnthropicCompatible = domain.PlatformAnthropicCompatible
+
 	// 自定义 Anthropic-compatible 渠道平台（国内厂商）
 	PlatformAnthropicZhipu   = domain.PlatformAnthropicZhipu
 	PlatformAnthropicKimi    = domain.PlatformAnthropicKimi
