@@ -1943,29 +1943,29 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { useAppStore } from '@/stores/app'
-import { useOnboardingStore } from '@/stores/onboarding'
 import { adminAPI } from '@/api/admin'
-import type { AdminGroup, GroupPlatform, SubscriptionType } from '@/types'
-import type { Column } from '@/components/common/types'
-import AppLayout from '@/components/layout/AppLayout.vue'
-import TablePageLayout from '@/components/layout/TablePageLayout.vue'
-import DataTable from '@/components/common/DataTable.vue'
-import Pagination from '@/components/common/Pagination.vue'
+import GroupRateMultipliersModal from '@/components/admin/group/GroupRateMultipliersModal.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import DataTable from '@/components/common/DataTable.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-import Select from '@/components/common/Select.vue'
-import PlatformIcon from '@/components/common/PlatformIcon.vue'
-import Icon from '@/components/icons/Icon.vue'
-import GroupRateMultipliersModal from '@/components/admin/group/GroupRateMultipliersModal.vue'
 import GroupCapacityBadge from '@/components/common/GroupCapacityBadge.vue'
-import { VueDraggable } from 'vue-draggable-plus'
-import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
+import Pagination from '@/components/common/Pagination.vue'
+import PlatformIcon from '@/components/common/PlatformIcon.vue'
+import Select from '@/components/common/Select.vue'
+import type { Column } from '@/components/common/types'
+import Icon from '@/components/icons/Icon.vue'
+import AppLayout from '@/components/layout/AppLayout.vue'
+import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import { useKeyedDebouncedSearch } from '@/composables/useKeyedDebouncedSearch'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
+import { useAppStore } from '@/stores/app'
+import { useOnboardingStore } from '@/stores/onboarding'
+import type { AdminGroup, GroupPlatform, SubscriptionType } from '@/types'
+import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { VueDraggable } from 'vue-draggable-plus'
+import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -2002,7 +2002,13 @@ const platformOptions = computed(() => [
   { value: 'openai', label: 'OpenAI' },
   { value: 'gemini', label: 'Gemini' },
   { value: 'antigravity', label: 'Antigravity' },
-  { value: 'sora', label: 'Sora' }
+  { value: 'sora', label: 'Sora' },
+  // 自定义 Anthropic-compatible 渠道（国内厂商）
+  { value: 'anthropic-zhipu', label: t('admin.groups.platforms.anthropic-zhipu') },
+  { value: 'anthropic-kimi', label: t('admin.groups.platforms.anthropic-kimi') },
+  { value: 'anthropic-minimax', label: t('admin.groups.platforms.anthropic-minimax') },
+  { value: 'anthropic-qwen', label: t('admin.groups.platforms.anthropic-qwen') },
+  { value: 'anthropic-mimo', label: t('admin.groups.platforms.anthropic-mimo') }
 ])
 
 const platformFilterOptions = computed(() => [
@@ -2011,7 +2017,13 @@ const platformFilterOptions = computed(() => [
   { value: 'openai', label: 'OpenAI' },
   { value: 'gemini', label: 'Gemini' },
   { value: 'antigravity', label: 'Antigravity' },
-  { value: 'sora', label: 'Sora' }
+  { value: 'sora', label: 'Sora' },
+  // 自定义 Anthropic-compatible 渠道（国内厂商）
+  { value: 'anthropic-zhipu', label: t('admin.groups.platforms.anthropic-zhipu') },
+  { value: 'anthropic-kimi', label: t('admin.groups.platforms.anthropic-kimi') },
+  { value: 'anthropic-minimax', label: t('admin.groups.platforms.anthropic-minimax') },
+  { value: 'anthropic-qwen', label: t('admin.groups.platforms.anthropic-qwen') },
+  { value: 'anthropic-mimo', label: t('admin.groups.platforms.anthropic-mimo') }
 ])
 
 const editStatusOptions = computed(() => [

@@ -170,6 +170,23 @@
             Antigravity
           </button>
         </div>
+        <!-- 第二行：国内厂商 Anthropic-compatible 渠道 -->
+        <div class="mt-1 flex flex-wrap gap-1">
+          <button
+            v-for="compatPlatform in anthropicCompatPlatforms"
+            :key="compatPlatform.value"
+            type="button"
+            @click="form.platform = compatPlatform.value"
+            :class="[
+              'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all border',
+              form.platform === compatPlatform.value
+                ? 'bg-amber-50 border-amber-400 text-amber-700 dark:bg-amber-900/20 dark:border-amber-600 dark:text-amber-400'
+                : 'border-gray-200 text-gray-600 hover:border-amber-300 hover:text-amber-700 dark:border-dark-600 dark:text-gray-400 dark:hover:border-amber-700'
+            ]"
+          >
+            {{ compatPlatform.label }}
+          </button>
+        </div>
       </div>
 
       <!-- Account Type Selection (Sora) -->
@@ -927,6 +944,12 @@
       </div>
 
       <!-- API Key input (only for apikey type, excluding Antigravity which has its own fields) -->
+      <!-- 国内厂商 Anthropic-compatible 渠道：显示说明提示 -->
+      <div v-if="form.platform && form.platform.startsWith('anthropic-')" class="rounded-lg bg-amber-50 p-3 dark:bg-amber-900/20">
+        <p class="text-xs text-amber-700 dark:text-amber-400">
+          {{ t('admin.accounts.anthropicCompat.note') }}
+        </p>
+      </div>
       <div v-if="form.type === 'apikey' && form.platform !== 'antigravity'" class="space-y-4">
         <div>
           <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
@@ -939,7 +962,9 @@
                 ? 'https://api.openai.com'
                 : form.platform === 'gemini'
                   ? 'https://generativelanguage.googleapis.com'
-                  : 'https://api.anthropic.com'
+                  : form.platform.startsWith('anthropic-')
+                    ? t('admin.accounts.anthropicCompat.baseUrlPlaceholder')
+                    : 'https://api.anthropic.com'
             "
           />
           <p class="input-hint">{{ form.platform === 'sora' ? t('admin.accounts.soraUpstreamBaseUrlHint') : baseUrlHint }}</p>
@@ -956,7 +981,9 @@
                 ? 'sk-proj-...'
                 : form.platform === 'gemini'
                   ? 'AIza...'
-                  : 'sk-ant-...'
+                  : form.platform.startsWith('anthropic-')
+                    ? t('admin.accounts.anthropicCompat.apiKeyPlaceholder')
+                    : 'sk-ant-...'
             "
           />
           <p class="input-hint">{{ apiKeyHint }}</p>
@@ -2875,47 +2902,44 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { useAppStore } from '@/stores/app'
-import {
-  claudeModels,
-  getPresetMappingsByPlatform,
-  getModelsByPlatform,
-  commonErrorCodes,
-  buildModelMappingObject,
-  fetchAntigravityDefaultMappings,
-  isValidWildcardPattern
-} from '@/composables/useModelWhitelist'
-import { useAuthStore } from '@/stores/auth'
 import { adminAPI } from '@/api/admin'
+import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
+import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
+import { applyInterceptWarmup } from '@/components/account/credentialsBuilder'
+import BaseDialog from '@/components/common/BaseDialog.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import GroupSelector from '@/components/common/GroupSelector.vue'
+import ProxySelector from '@/components/common/ProxySelector.vue'
+import Select from '@/components/common/Select.vue'
+import Icon from '@/components/icons/Icon.vue'
 import {
   useAccountOAuth,
   type AddMethod,
   type AuthInputMethod
 } from '@/composables/useAccountOAuth'
-import { useOpenAIOAuth } from '@/composables/useOpenAIOAuth'
-import { useGeminiOAuth } from '@/composables/useGeminiOAuth'
 import { useAntigravityOAuth } from '@/composables/useAntigravityOAuth'
+import { useGeminiOAuth } from '@/composables/useGeminiOAuth'
+import {
+  buildModelMappingObject,
+  claudeModels,
+  commonErrorCodes,
+  fetchAntigravityDefaultMappings,
+  getModelsByPlatform,
+  getPresetMappingsByPlatform,
+  isValidWildcardPattern
+} from '@/composables/useModelWhitelist'
+import { useOpenAIOAuth } from '@/composables/useOpenAIOAuth'
+import { useAppStore } from '@/stores/app'
+import { useAuthStore } from '@/stores/auth'
 import type {
-  Proxy,
-  AdminGroup,
   AccountPlatform,
   AccountType,
+  AdminGroup,
   CheckMixedChannelResponse,
-  CreateAccountRequest
+  CreateAccountRequest,
+  Proxy
 } from '@/types'
-import BaseDialog from '@/components/common/BaseDialog.vue'
-import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import Select from '@/components/common/Select.vue'
-import Icon from '@/components/icons/Icon.vue'
-import ProxySelector from '@/components/common/ProxySelector.vue'
-import GroupSelector from '@/components/common/GroupSelector.vue'
-import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
-import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
-import { applyInterceptWarmup } from '@/components/account/credentialsBuilder'
 import { formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
-import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
 import {
   // OPENAI_WS_MODE_CTX_POOL,
   OPENAI_WS_MODE_OFF,
@@ -2924,6 +2948,9 @@ import {
   resolveOpenAIWSModeConcurrencyHintKey,
   type OpenAIWSMode
 } from '@/utils/openaiWsMode'
+import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
+import { computed, reactive, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import OAuthAuthorizationFlow from './OAuthAuthorizationFlow.vue'
 
 // Type for exposed OAuthAuthorizationFlow component
@@ -2975,6 +3002,15 @@ const emit = defineEmits<{
 }>()
 
 const appStore = useAppStore()
+
+// 国内厂商 Anthropic-compatible 平台列表（供 UI 渲染使用）
+const anthropicCompatPlatforms = [
+  { value: 'anthropic-zhipu' as AccountPlatform, label: t('admin.accounts.platforms.anthropicZhipu') },
+  { value: 'anthropic-kimi' as AccountPlatform, label: t('admin.accounts.platforms.anthropicKimi') },
+  { value: 'anthropic-minimax' as AccountPlatform, label: t('admin.accounts.platforms.anthropicMinimax') },
+  { value: 'anthropic-qwen' as AccountPlatform, label: t('admin.accounts.platforms.anthropicQwen') },
+  { value: 'anthropic-mimo' as AccountPlatform, label: t('admin.accounts.platforms.anthropicMimo') },
+]
 
 // OAuth composables
 const oauth = useAccountOAuth() // For Anthropic OAuth
@@ -3356,7 +3392,10 @@ watch(
         ? 'https://api.openai.com'
         : newPlatform === 'gemini'
           ? 'https://generativelanguage.googleapis.com'
-          : 'https://api.anthropic.com'
+          // 自定义 Anthropic-compatible 渠道：base_url 由用户填写，不预设默认值
+          : newPlatform.startsWith('anthropic-')
+            ? ''
+            : 'https://api.anthropic.com'
     // Clear model-related settings
     allowedModels.value = []
     modelMappings.value = []
@@ -3393,6 +3432,11 @@ watch(
       addMethod.value = 'oauth'
       form.type = 'oauth'
       soraAccountType.value = 'oauth'
+    }
+    // 自定义 Anthropic-compatible 渠道只支持 API Key 类型
+    if (newPlatform.startsWith('anthropic-')) {
+      accountCategory.value = 'apikey'
+      form.type = 'apikey'
     }
     if (newPlatform !== 'openai') {
       openaiPassthroughEnabled.value = false
