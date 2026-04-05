@@ -1577,6 +1577,9 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 			return nil, errors.New("base_url 必须以 http:// 或 https:// 开头")
 		}
 	}
+	if err := validateAnthropicCompatAccountSettings(input.Platform, input.Type, input.Credentials); err != nil {
+		return nil, err
+	}
 
 	account := &Account{
 		Name:        input.Name,
@@ -1773,6 +1776,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
 			return nil, errors.New("base_url 必须以 http:// 或 https:// 开头")
 		}
+	}
+	if err := validateAnthropicCompatAccountSettings(account.Platform, account.Type, account.Credentials); err != nil {
+		return nil, err
 	}
 
 	// 先验证分组是否存在（在任何写操作之前）

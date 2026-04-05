@@ -1,13 +1,13 @@
 package service
 
-// ForwardAnthropicCompat 处理自定义 Anthropic-compatible 渠道（anthropic-* 平台）的请求转发。
+// ForwardAnthropicCompat 处理 Anthropic-compatible 渠道（anthropic-compatible 与 anthropic-* 平台）的请求转发。
 //
 // 设计原则：
 //   - 所有前置逻辑（鉴权、并发控制、粘性会话、账号选择）由 GatewayHandler 复用现有链路完成
 //   - 本方法仅负责"真正发上游请求与解析响应"，与官方 Anthropic 的 OAuth/TLS/ClaudeCode 逻辑完全隔离
 //   - 通过 anthropiccompat.Resolve 从 Provider Registry 获取渠道规格，无需修改本文件即可扩展新渠道
 //
-// 支持的渠道：anthropic-zhipu、anthropic-kimi、anthropic-minimax、anthropic-qwen、anthropic-mimo 等
+// 支持的渠道：anthropic-compatible、anthropic-zhipu、anthropic-kimi、anthropic-minimax、anthropic-qwen、anthropic-mimo 等
 
 import (
 	"bytes"
@@ -25,7 +25,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ForwardAnthropicCompat 转发 anthropic-* 自定义兼容平台的请求。
+// ForwardAnthropicCompat 转发 Anthropic-compatible 平台的请求。
 // 签名与 Forward 保持一致，便于 GatewayHandler 在分流点直接替换调用。
 func (s *GatewayService) ForwardAnthropicCompat(
 	ctx context.Context,
@@ -41,6 +41,10 @@ func (s *GatewayService) ForwardAnthropicCompat(
 	if !ok {
 		return nil, writeAnthropicCompatError(c, http.StatusBadGateway,
 			"api_error", fmt.Sprintf("未注册的 Anthropic-compatible 渠道平台: %s", account.Platform))
+	}
+	if requiresExplicitAnthropicCompatBaseURL(account.GetCredential("base_url"), spec) {
+		return nil, writeAnthropicCompatError(c, http.StatusBadGateway,
+			"api_error", "该 Anthropic-compatible 渠道必须设置 base_url")
 	}
 
 	// 2. 仅支持 APIKey 类型账号（国内厂商均使用 API Key 认证）

@@ -35,4 +35,17 @@ func TestResolveAnthropicCompatBaseURL(t *testing.T) {
 			t.Fatalf("resolveAnthropicCompatBaseURL() = %q, want %q", got, custom)
 		}
 	})
+
+	t.Run("empty provider default requires explicit base url", func(t *testing.T) {
+		genericSpec := &anthropiccompat.ProviderSpec{
+			Platform:       "anthropic-compatible",
+			DefaultBaseURL: "",
+		}
+		if !requiresExplicitAnthropicCompatBaseURL("", genericSpec) {
+			t.Fatal("requiresExplicitAnthropicCompatBaseURL() = false, want true")
+		}
+		if got := resolveAnthropicCompatBaseURL("", genericSpec); got != "" {
+			t.Fatalf("resolveAnthropicCompatBaseURL() = %q, want empty string", got)
+		}
+	})
 }
