@@ -2329,9 +2329,9 @@ export default {
       apiKeyHint: '您的 Claude Console API Key',
       // 国内厂商 Anthropic-compatible 渠道专属提示
       anthropicCompat: {
-        baseUrlPlaceholder: '请输入上游 API 地址（必填）',
+        baseUrlPlaceholder: '留空使用平台默认上游地址',
         apiKeyPlaceholder: '请输入 API Key',
-        baseUrlHint: '自定义渠道必须填写正确的上游 API 地址',
+        baseUrlHint: '留空使用平台默认上游地址；如需自定义中转/代理，再填写覆盖地址',
         apiKeyHint: '对应厂商颁发的 API Key',
         note: '此渠道类型仅支持 API Key 认证，无需 OAuth 授权',
       },

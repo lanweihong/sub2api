@@ -962,7 +962,7 @@
                 ? 'https://api.openai.com'
                 : form.platform === 'gemini'
                   ? 'https://generativelanguage.googleapis.com'
-                  : form.platform.startsWith('anthropic-')
+                  : isAnthropicCompatPlatform(form.platform)
                     ? t('admin.accounts.anthropicCompat.baseUrlPlaceholder')
                     : 'https://api.anthropic.com'
             "
@@ -981,7 +981,7 @@
                 ? 'sk-proj-...'
                 : form.platform === 'gemini'
                   ? 'AIza...'
-                  : form.platform.startsWith('anthropic-')
+                  : isAnthropicCompatPlatform(form.platform)
                     ? t('admin.accounts.anthropicCompat.apiKeyPlaceholder')
                     : 'sk-ant-...'
             "
@@ -2948,6 +2948,7 @@ import {
   resolveOpenAIWSModeConcurrencyHintKey,
   type OpenAIWSMode
 } from '@/utils/openaiWsMode'
+import { getDefaultApiKeyBaseUrl, isAnthropicCompatPlatform } from '@/utils/accountBaseUrl'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -2980,12 +2981,14 @@ const oauthStepTitle = computed(() => {
 const baseUrlHint = computed(() => {
   if (form.platform === 'openai' || form.platform === 'sora') return t('admin.accounts.openai.baseUrlHint')
   if (form.platform === 'gemini') return t('admin.accounts.gemini.baseUrlHint')
+  if (isAnthropicCompatPlatform(form.platform)) return t('admin.accounts.anthropicCompat.baseUrlHint')
   return t('admin.accounts.baseUrlHint')
 })
 
 const apiKeyHint = computed(() => {
   if (form.platform === 'openai' || form.platform === 'sora') return t('admin.accounts.openai.apiKeyHint')
   if (form.platform === 'gemini') return t('admin.accounts.gemini.apiKeyHint')
+  if (isAnthropicCompatPlatform(form.platform)) return t('admin.accounts.anthropicCompat.apiKeyHint')
   return t('admin.accounts.apiKeyHint')
 })
 
@@ -3070,7 +3073,7 @@ const step = ref(1)
 const submitting = ref(false)
 const accountCategory = ref<'oauth-based' | 'apikey' | 'bedrock'>('oauth-based') // UI selection for account category
 const addMethod = ref<AddMethod>('oauth') // For oauth-based: 'oauth' or 'setup-token'
-const apiKeyBaseUrl = ref('https://api.anthropic.com')
+const apiKeyBaseUrl = ref(getDefaultApiKeyBaseUrl('anthropic'))
 const apiKeyValue = ref('')
 const editQuotaLimit = ref<number | null>(null)
 const editQuotaDailyLimit = ref<number | null>(null)
@@ -3387,15 +3390,7 @@ watch(
   () => form.platform,
   (newPlatform) => {
     // Reset base URL based on platform
-    apiKeyBaseUrl.value =
-      (newPlatform === 'openai' || newPlatform === 'sora')
-        ? 'https://api.openai.com'
-        : newPlatform === 'gemini'
-          ? 'https://generativelanguage.googleapis.com'
-          // 自定义 Anthropic-compatible 渠道：base_url 由用户填写，不预设默认值
-          : newPlatform.startsWith('anthropic-')
-            ? ''
-            : 'https://api.anthropic.com'
+    apiKeyBaseUrl.value = getDefaultApiKeyBaseUrl(newPlatform)
     // Clear model-related settings
     allowedModels.value = []
     modelMappings.value = []
@@ -3434,7 +3429,7 @@ watch(
       soraAccountType.value = 'oauth'
     }
     // 自定义 Anthropic-compatible 渠道只支持 API Key 类型
-    if (newPlatform.startsWith('anthropic-')) {
+    if (isAnthropicCompatPlatform(newPlatform)) {
       accountCategory.value = 'apikey'
       form.type = 'apikey'
     }
@@ -3797,7 +3792,7 @@ const resetForm = () => {
   form.expires_at = null
   accountCategory.value = 'oauth-based'
   addMethod.value = 'oauth'
-  apiKeyBaseUrl.value = 'https://api.anthropic.com'
+  apiKeyBaseUrl.value = getDefaultApiKeyBaseUrl('anthropic')
   apiKeyValue.value = ''
   editQuotaLimit.value = null
   editQuotaDailyLimit.value = null
@@ -4122,12 +4117,7 @@ const handleSubmit = async () => {
   }
 
   // Determine default base URL based on platform
-  const defaultBaseUrl =
-    form.platform === 'openai'
-      ? 'https://api.openai.com'
-      : form.platform === 'gemini'
-        ? 'https://generativelanguage.googleapis.com'
-        : 'https://api.anthropic.com'
+  const defaultBaseUrl = getDefaultApiKeyBaseUrl(form.platform)
 
   // Build credentials with optional model mapping
   const credentials: Record<string, unknown> = {

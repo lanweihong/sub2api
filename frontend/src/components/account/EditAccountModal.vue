@@ -41,7 +41,9 @@
                   ? 'https://generativelanguage.googleapis.com'
                   : account.platform === 'antigravity'
                     ? 'https://cloudcode-pa.googleapis.com'
-                    : 'https://api.anthropic.com'
+                    : isAnthropicCompatPlatform(account.platform)
+                      ? getDefaultApiKeyBaseUrl(account.platform)
+                      : 'https://api.anthropic.com'
             "
           />
           <p class="input-hint">{{ baseUrlHint }}</p>
@@ -1762,6 +1764,7 @@ import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import { applyInterceptWarmup } from '@/components/account/credentialsBuilder'
 import { formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
+import { getDefaultApiKeyBaseUrl, isAnthropicCompatPlatform } from '@/utils/accountBaseUrl'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
 import {
   // OPENAI_WS_MODE_CTX_POOL,
@@ -1799,8 +1802,9 @@ const authStore = useAuthStore()
 // Platform-specific hint for Base URL
 const baseUrlHint = computed(() => {
   if (!props.account) return t('admin.accounts.baseUrlHint')
-  if (props.account.platform === 'openai') return t('admin.accounts.openai.baseUrlHint')
+  if (props.account.platform === 'openai' || props.account.platform === 'sora') return t('admin.accounts.openai.baseUrlHint')
   if (props.account.platform === 'gemini') return t('admin.accounts.gemini.baseUrlHint')
+  if (isAnthropicCompatPlatform(props.account.platform)) return t('admin.accounts.anthropicCompat.baseUrlHint')
   return t('admin.accounts.baseUrlHint')
 })
 
@@ -1822,7 +1826,7 @@ interface TempUnschedRuleForm {
 
 // State
 const submitting = ref(false)
-const editBaseUrl = ref('https://api.anthropic.com')
+const editBaseUrl = ref(getDefaultApiKeyBaseUrl('anthropic'))
 const editApiKey = ref('')
 // Bedrock credentials
 const editBedrockAccessKeyId = ref('')
@@ -1969,9 +1973,7 @@ const tempUnschedPresets = computed(() => [
 
 // Computed: default base URL based on platform
 const defaultBaseUrl = computed(() => {
-  if (props.account?.platform === 'openai' || props.account?.platform === 'sora') return 'https://api.openai.com'
-  if (props.account?.platform === 'gemini') return 'https://generativelanguage.googleapis.com'
-  return 'https://api.anthropic.com'
+  return getDefaultApiKeyBaseUrl(props.account?.platform)
 })
 
 const mixedChannelWarningMessageText = computed(() => {
@@ -2156,12 +2158,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   // Initialize API Key fields for apikey type
   if (newAccount.type === 'apikey' && newAccount.credentials) {
     const credentials = newAccount.credentials as Record<string, unknown>
-    const platformDefaultUrl =
-      newAccount.platform === 'openai' || newAccount.platform === 'sora'
-        ? 'https://api.openai.com'
-        : newAccount.platform === 'gemini'
-          ? 'https://generativelanguage.googleapis.com'
-          : 'https://api.anthropic.com'
+    const platformDefaultUrl = getDefaultApiKeyBaseUrl(newAccount.platform)
     editBaseUrl.value = (credentials.base_url as string) || platformDefaultUrl
 
     // Load model mappings and detect mode
@@ -2252,12 +2249,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     const credentials = newAccount.credentials as Record<string, unknown>
     editBaseUrl.value = (credentials.base_url as string) || ''
   } else {
-    const platformDefaultUrl =
-      newAccount.platform === 'openai' || newAccount.platform === 'sora'
-        ? 'https://api.openai.com'
-        : newAccount.platform === 'gemini'
-          ? 'https://generativelanguage.googleapis.com'
-          : 'https://api.anthropic.com'
+    const platformDefaultUrl = getDefaultApiKeyBaseUrl(newAccount.platform)
     editBaseUrl.value = platformDefaultUrl
 
     // Load model mappings for OpenAI OAuth accounts

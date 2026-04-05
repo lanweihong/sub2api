@@ -2172,9 +2172,9 @@ export default {
       apiKeyHint: 'Your Claude Console API Key',
       // Custom Anthropic-compatible channel (domestic vendors)
       anthropicCompat: {
-        baseUrlPlaceholder: 'Enter upstream API base URL (required)',
+        baseUrlPlaceholder: 'Leave blank to use the platform default upstream URL',
         apiKeyPlaceholder: 'Enter API Key',
-        baseUrlHint: 'Custom channels must specify the upstream API base URL',
+        baseUrlHint: 'Leave blank to use the platform default upstream URL, or override it for a custom relay/proxy',
         apiKeyHint: 'API Key issued by the provider',
         note: 'This channel type only supports API Key authentication, no OAuth required',
       },
