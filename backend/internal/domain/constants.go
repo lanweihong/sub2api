@@ -1,5 +1,7 @@
 package domain
 
+import "strings"
+
 // Status constants
 const (
 	StatusActive   = "active"
@@ -16,14 +18,34 @@ const (
 	RoleUser  = "user"
 )
 
-// Platform constants
+// 平台标识常量
 const (
 	PlatformAnthropic   = "anthropic"
 	PlatformOpenAI      = "openai"
 	PlatformGemini      = "gemini"
 	PlatformAntigravity = "antigravity"
 	PlatformSora        = "sora"
+
+	// 自定义 Anthropic-compatible 渠道（国内厂商）
+	// 命名约定："anthropic-" 前缀 + 厂商标识，例如 "anthropic-zhipu"。
+	// 这些平台走新旁路封装层，不影响官方 anthropic 的原有逻辑。
+	PlatformAnthropicZhipu   = "anthropic-zhipu"
+	PlatformAnthropicKimi    = "anthropic-kimi"
+	PlatformAnthropicMinimax = "anthropic-minimax"
+	PlatformAnthropicQwen    = "anthropic-qwen"
+	PlatformAnthropicMimo    = "anthropic-mimo"
+
+	// AnthropicCompatPrefix 是自定义 Anthropic-compatible 渠道的命名前缀。
+	// 凡是以 "anthropic-" 开头的 platform 值，均由 anthropiccompat 旁路层处理。
+	AnthropicCompatPrefix = "anthropic-"
 )
+
+// IsAnthropicCompatPlatform 判断给定平台是否为自定义 Anthropic-compatible 渠道。
+// 例如 "anthropic-zhipu"、"anthropic-kimi" 均返回 true；
+// 官方 "anthropic" 平台返回 false，仍走原有 GatewayService 链路。
+func IsAnthropicCompatPlatform(platform string) bool {
+	return strings.HasPrefix(platform, AnthropicCompatPrefix)
+}
 
 // Account type constants
 const (

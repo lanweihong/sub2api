@@ -18,14 +18,25 @@ const (
 	RoleUser  = domain.RoleUser
 )
 
-// Platform constants
+// 平台标识常量（介入自 domain 包）
 const (
 	PlatformAnthropic   = domain.PlatformAnthropic
 	PlatformOpenAI      = domain.PlatformOpenAI
 	PlatformGemini      = domain.PlatformGemini
 	PlatformAntigravity = domain.PlatformAntigravity
 	PlatformSora        = domain.PlatformSora
+
+	// 自定义 Anthropic-compatible 渠道平台（国内厂商）
+	PlatformAnthropicZhipu   = domain.PlatformAnthropicZhipu
+	PlatformAnthropicKimi    = domain.PlatformAnthropicKimi
+	PlatformAnthropicMinimax = domain.PlatformAnthropicMinimax
+	PlatformAnthropicQwen    = domain.PlatformAnthropicQwen
+	PlatformAnthropicMimo    = domain.PlatformAnthropicMimo
+	AnthropicCompatPrefix    = domain.AnthropicCompatPrefix
 )
+
+// IsAnthropicCompatPlatform 委托 domain.IsAnthropicCompatPlatform，在 service 层就近调用，减少包引用层次。
+var IsAnthropicCompatPlatform = domain.IsAnthropicCompatPlatform
 
 // Account type constants
 const (
