@@ -1,9 +1,9 @@
-// Package anthropiccompat 提供自定义 Anthropic-compatible 渠道（国内厂商）的旁路封装层。
+// Package anthropiccompat 提供 Anthropic-compatible 渠道的旁路封装层。
 //
 // 设计目标：
 //   - 新增渠道时只需注册一个 ProviderSpec，不修改任何现有主链路代码。
 //   - 官方 "anthropic" 平台绝不进入本包，继续走原 GatewayService 路径。
-//   - 所有 "anthropic-*" 平台流量由本包统一处理。
+//   - 通用平台 "anthropic-compatible" 以及所有 "anthropic-*" 平台流量由本包统一处理。
 package anthropiccompat
 
 // AuthMode 定义上游请求的鉴权方式。
@@ -19,13 +19,15 @@ const (
 // ProviderSpec 描述一个自定义 Anthropic-compatible 渠道的最小能力集。
 // 引入新渠道时，只需填写此结构体并调用 Register 注册，无需修改转发主流程。
 type ProviderSpec struct {
-	// Platform 是该渠道唯一的平台标识，须以 "anthropic-" 为前缀，例如 "anthropic-zhipu"。
+	// Platform 是该渠道唯一的平台标识。
+	// 内置平台通常使用 "anthropic-" 前缀；通用兜底平台使用 "anthropic-compatible"。
 	Platform string
 
 	// DisplayName 是管理后台展示的可读名称。
 	DisplayName string
 
 	// DefaultBaseURL 是账号未配置 base_url 时使用的默认上游地址。
+	// 为空表示该渠道必须由账号显式配置 base_url。
 	DefaultBaseURL string
 
 	// MessagesPath 拼接在 base_url 后构成消息端点 URL。

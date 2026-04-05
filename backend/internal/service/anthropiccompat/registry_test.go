@@ -15,6 +15,7 @@ import (
 // TestResolveRegisteredProviders 验证所有内置 provider 均已正确注册且可解析。
 func TestResolveRegisteredProviders(t *testing.T) {
 	expectedPlatforms := []string{
+		"anthropic-compatible",
 		"anthropic-zhipu",
 		"anthropic-kimi",
 		"anthropic-minimax",
@@ -37,14 +38,17 @@ func TestResolveRegisteredProviders(t *testing.T) {
 			if spec.DisplayName == "" {
 				t.Errorf("平台 %q 的 DisplayName 为空", platform)
 			}
-			if spec.DefaultBaseURL == "" {
+			if platform != "anthropic-compatible" && spec.DefaultBaseURL == "" {
 				t.Errorf("平台 %q 的 DefaultBaseURL 为空", platform)
 			}
-			if len(spec.DefaultModels) == 0 {
+			if platform != "anthropic-compatible" && len(spec.DefaultModels) == 0 {
 				t.Errorf("平台 %q 的 DefaultModels 为空", platform)
 			}
-			// 所有内置 provider 须以 "anthropic-" 为前缀
-			if !strings.HasPrefix(spec.Platform, "anthropic-") {
+			if platform == "anthropic-compatible" {
+				if spec.Platform != "anthropic-compatible" {
+					t.Errorf("平台 %q 的 spec.Platform = %q", platform, spec.Platform)
+				}
+			} else if !strings.HasPrefix(spec.Platform, "anthropic-") {
 				t.Errorf("平台 %q 不以 'anthropic-' 为前缀", platform)
 			}
 		})
@@ -76,6 +80,7 @@ func TestListPlatformsContainsAllBuiltins(t *testing.T) {
 	}
 
 	required := []string{
+		"anthropic-compatible",
 		"anthropic-zhipu",
 		"anthropic-kimi",
 		"anthropic-minimax",
@@ -92,6 +97,7 @@ func TestListPlatformsContainsAllBuiltins(t *testing.T) {
 // TestDefaultModelsForPlatform 验证 DefaultModelsForPlatform 返回非空副本。
 func TestDefaultModelsForPlatform(t *testing.T) {
 	platforms := []string{
+		"anthropic-compatible",
 		"anthropic-zhipu",
 		"anthropic-kimi",
 		"anthropic-minimax",
@@ -101,7 +107,7 @@ func TestDefaultModelsForPlatform(t *testing.T) {
 	for _, p := range platforms {
 		t.Run(p, func(t *testing.T) {
 			models := anthropiccompat.DefaultModelsForPlatform(p)
-			if len(models) == 0 {
+			if p != "anthropic-compatible" && len(models) == 0 {
 				t.Errorf("平台 %q 的默认模型列表为空", p)
 			}
 			// 验证返回副本（修改副本不影响 registry）
@@ -115,6 +121,19 @@ func TestDefaultModelsForPlatform(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestGenericProviderRequiresExplicitBaseURL(t *testing.T) {
+	spec, ok := anthropiccompat.Resolve("anthropic-compatible")
+	if !ok || spec == nil {
+		t.Fatal("anthropic-compatible 未注册")
+	}
+	if spec.DefaultBaseURL != "" {
+		t.Fatalf("DefaultBaseURL = %q，期望空字符串", spec.DefaultBaseURL)
+	}
+	if len(spec.DefaultModels) != 0 {
+		t.Fatalf("DefaultModels = %v，期望空切片", spec.DefaultModels)
 	}
 }
 
