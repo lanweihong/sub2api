@@ -160,19 +160,32 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 	// 设置 max_tokens=1 + haiku 探测请求标识到 context 中
 	// 必须在 SetClaudeCodeClientContext 之前设置，因为 ClaudeCodeValidator 需要读取此标识进行绕过判断
-	if isMaxTokensOneHaikuRequest(reqModel, parsedReq.MaxTokens, reqStream) {
-		ctx := service.WithIsMaxTokensOneHaikuRequest(c.Request.Context(), true, h.metadataBridgeEnabled())
-		c.Request = c.Request.WithContext(ctx)
+
+	// 提前确定平台，用于 Claude Code 逻辑的 guard（防止自定义 Anthropic-compatible 渠道被误拦截）
+	earlyPlatform := ""
+	if forcePlatform, ok := middleware2.GetForcePlatformFromContext(c); ok {
+		earlyPlatform = forcePlatform
+	} else if apiKey.Group != nil {
+		earlyPlatform = apiKey.Group.Platform
 	}
 
-	// 检查是否为 Claude Code 客户端，设置到 context 中（复用已解析请求，避免二次反序列化）。
-	SetClaudeCodeClientContext(c, body, parsedReq)
+	// Claude Code 相关逻辑仅对官方 Anthropic 平台生效
+	// 对自定义 anthropic-* 渠道跳过：避免 checkClaudeCodeVersion 误拦截非 Claude Code 客户端
+	if !domain.IsAnthropicCompatPlatform(earlyPlatform) {
+		if isMaxTokensOneHaikuRequest(reqModel, parsedReq.MaxTokens, reqStream) {
+			ctx := service.WithIsMaxTokensOneHaikuRequest(c.Request.Context(), true, h.metadataBridgeEnabled())
+			c.Request = c.Request.WithContext(ctx)
+		}
+		// 检查是否为 Claude Code 客户端，设置到 context 中（复用已解析请求，避免二次反序列化）。
+		SetClaudeCodeClientContext(c, body, parsedReq)
+		// 版本检查：仅对 Claude Code 客户端，拒绝低于最低版本的请求
+		if !h.checkClaudeCodeVersion(c) {
+			return
+		}
+	}
+
+	// isClaudeCodeClient 可能在非 Anthropic-compat 平台中被设置；其他平台默认 false
 	isClaudeCodeClient := service.IsClaudeCodeClient(c.Request.Context())
-
-	// 版本检查：仅对 Claude Code 客户端，拒绝低于最低版本的请求
-	if !h.checkClaudeCodeVersion(c) {
-		return
-	}
 
 	// 在请求上下文中记录 thinking 状态，供 Antigravity 最终模型 key 推导/模型维度限流使用
 	c.Request = c.Request.WithContext(service.WithThinkingEnabled(c.Request.Context(), parsedReq.ThinkingEnabled, h.metadataBridgeEnabled()))
@@ -670,6 +683,10 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			writerSizeBeforeForward := c.Writer.Size()
 			if account.Platform == service.PlatformAntigravity && account.Type != service.AccountTypeAPIKey {
 				result, err = h.antigravityGatewayService.Forward(requestCtx, c, account, body, hasBoundSession)
+			} else if domain.IsAnthropicCompatPlatform(account.Platform) {
+				// 自定义 Anthropic-compatible 渠道（anthropic-zhipu、anthropic-kimi 等）走旁路封装层
+				// 复用了前置鉴权、并发控制、粘性会话、账号选择等所有上层逻辑
+				result, err = h.gatewayService.ForwardAnthropicCompat(requestCtx, c, account, parsedReq)
 			} else {
 				result, err = h.gatewayService.Forward(requestCtx, c, account, parsedReq)
 			}
