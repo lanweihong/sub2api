@@ -70,3 +70,27 @@ func TestAccountTestService_AnthropicCompatZhipuUsesProviderDefaultBaseURL(t *te
 	require.Contains(t, string(body), `"model":"glm-4-plus"`)
 	require.Contains(t, rec.Body.String(), `"type":"done"`)
 }
+
+func TestAccountTestService_AnthropicCompatibleRequiresExplicitBaseURL(t *testing.T) {
+	c, rec := newSoraTestContext()
+	upstream := &compatHTTPUpstreamRecorder{
+		resp: newJSONResponse(http.StatusOK, `{"content":[{"type":"text","text":"ok"}]}`),
+	}
+	svc := &AccountTestService{
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          8,
+		Platform:    PlatformAnthropicCompatible,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key": "compat-test-key",
+		},
+	}
+
+	err := svc.testAnthropicCompatAccountConnection(c, account, "")
+	require.Error(t, err)
+	require.Nil(t, upstream.lastReq)
+	require.Contains(t, rec.Body.String(), "必须设置 base_url")
+}

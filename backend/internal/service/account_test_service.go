@@ -1834,7 +1834,7 @@ func parseTestSSEOutput(body string) (responseText, errMsg string) {
 	return
 }
 
-// testAnthropicCompatAccountConnection 测试自定义 Anthropic-compatible 渠道账号连接。
+// testAnthropicCompatAccountConnection 测试 Anthropic-compatible 渠道账号连接。
 //
 // 与官方 Anthropic 测试不同，此方法：
 //   - 只使用 APIKey 认证，不走 OAuth 流程
@@ -1853,6 +1853,10 @@ func (s *AccountTestService) testAnthropicCompatAccountConnection(c *gin.Context
 	apiKey := strings.TrimSpace(account.GetCredential("api_key"))
 	if apiKey == "" {
 		return s.sendErrorAndEnd(c, "未配置 api_key")
+	}
+
+	if requiresExplicitAnthropicCompatBaseURL(account.GetCredential("base_url"), spec) {
+		return s.sendErrorAndEnd(c, "该 Anthropic-compatible 渠道必须设置 base_url")
 	}
 
 	// 获取 base_url（优先账号配置，其次渠道默认）
