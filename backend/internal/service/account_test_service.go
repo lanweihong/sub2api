@@ -1856,10 +1856,7 @@ func (s *AccountTestService) testAnthropicCompatAccountConnection(c *gin.Context
 	}
 
 	// 获取 base_url（优先账号配置，其次渠道默认）
-	baseURL := strings.TrimSpace(account.GetCredential("base_url"))
-	if baseURL == "" {
-		baseURL = spec.DefaultBaseURL
-	}
+	baseURL := resolveAnthropicCompatBaseURL(account.GetCredential("base_url"), spec)
 	normalizedBaseURL, err := s.validateUpstreamBaseURL(baseURL)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("无效的 base_url: %s", err.Error()))
