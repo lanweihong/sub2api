@@ -904,7 +904,7 @@ func TestOpenAIStreamingTimeout(t *testing.T) {
 	}
 
 	start := time.Now()
-	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1}, start, "model", "model")
+	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1}, start, "model", "model", 0)
 	_ = pw.Close()
 	_ = pr.Close()
 
@@ -939,7 +939,7 @@ func TestOpenAIStreamingContextCanceledReturnsIncompleteErrorWithoutInjectingErr
 		Header:     http.Header{},
 	}
 
-	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "model", "model")
+	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "model", "model", 0)
 	if err == nil || !strings.Contains(err.Error(), "stream usage incomplete") {
 		t.Fatalf("expected incomplete stream error, got %v", err)
 	}
@@ -977,7 +977,7 @@ func TestOpenAIStreamingClientDisconnectDrainsUpstreamUsage(t *testing.T) {
 		_, _ = pw.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":3,\"output_tokens\":5,\"input_tokens_details\":{\"cached_tokens\":1}}}}\n\n"))
 	}()
 
-	result, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "model", "model")
+	result, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "model", "model", 0)
 	_ = pr.Close()
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
@@ -1020,7 +1020,7 @@ func TestOpenAIStreamingMissingTerminalEventReturnsIncompleteError(t *testing.T)
 		_, _ = pw.Write([]byte("data: {\"type\":\"response.in_progress\",\"response\":{}}\n\n"))
 	}()
 
-	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "model", "model")
+	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "model", "model", 0)
 	_ = pr.Close()
 	if err == nil || !strings.Contains(err.Error(), "missing terminal event") {
 		t.Fatalf("expected missing terminal event error, got %v", err)
@@ -1052,7 +1052,7 @@ func TestOpenAIStreamingPassthroughMissingTerminalEventReturnsIncompleteError(t 
 		_, _ = pw.Write([]byte("data: {\"type\":\"response.in_progress\",\"response\":{}}\n\n"))
 	}()
 
-	_, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now())
+	_, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), 0)
 	_ = pr.Close()
 	if err == nil || !strings.Contains(err.Error(), "missing terminal event") {
 		t.Fatalf("expected missing terminal event error, got %v", err)
@@ -1084,7 +1084,7 @@ func TestOpenAIStreamingPassthroughResponseDoneWithoutDoneMarkerStillSucceeds(t 
 		_, _ = pw.Write([]byte("data: {\"type\":\"response.done\",\"response\":{\"usage\":{\"input_tokens\":2,\"output_tokens\":3,\"input_tokens_details\":{\"cached_tokens\":1}}}}\n\n"))
 	}()
 
-	result, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now())
+	result, err := svc.handleStreamingResponsePassthrough(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), 0)
 	_ = pr.Close()
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -1123,7 +1123,7 @@ func TestOpenAIStreamingTooLong(t *testing.T) {
 		_, _ = pw.Write([]byte(payload))
 	}()
 
-	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 2}, time.Now(), "model", "model")
+	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 2}, time.Now(), "model", "model", 0)
 	_ = pr.Close()
 
 	if !errors.Is(err, bufio.ErrTooLong) {
@@ -1228,7 +1228,7 @@ func TestOpenAIStreamingHeadersOverride(t *testing.T) {
 		_, _ = pw.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{}}\n\n"))
 	}()
 
-	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "model", "model")
+	_, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "model", "model", 0)
 	_ = pr.Close()
 	if err != nil {
 		t.Fatalf("handleStreamingResponse error: %v", err)
@@ -1272,7 +1272,7 @@ func TestOpenAIStreamingReuseScannerBufferAndStillWorks(t *testing.T) {
 		_, _ = pw.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":1,\"output_tokens\":2,\"input_tokens_details\":{\"cached_tokens\":3}}}}\n\n"))
 	}()
 
-	result, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "model", "model")
+	result, err := svc.handleStreamingResponse(c.Request.Context(), resp, c, &Account{ID: 1}, time.Now(), "model", "model", 0)
 	_ = pr.Close()
 	require.NoError(t, err)
 	require.NotNil(t, result)

@@ -230,6 +230,10 @@ type OpenAIForwardResult struct {
 	ResponseHeaders http.Header
 	Duration        time.Duration
 	FirstTokenMs    *int
+
+	// 报文审计
+	ResponseBody      []byte // 非流式响应原始 body（仅 payloadLogging 开启时填充）
+	ResponseTruncated bool   // 响应体是否被截断
 }
 
 type OpenAIWSRetryMetricsSnapshot struct {
@@ -337,6 +341,8 @@ type OpenAIGatewayService struct {
 	openaiWSRetryMetrics  openAIWSRetryMetrics
 	responseHeaderFilter  *responseheaders.CompiledHeaderFilter
 	codexSnapshotThrottle *accountWriteThrottle
+	payloadRepo           UsageLogPayloadRepository // 报文审计存储
+	settingService        *SettingService
 }
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService
@@ -357,6 +363,8 @@ func NewOpenAIGatewayService(
 	httpUpstream HTTPUpstream,
 	deferredService *DeferredService,
 	openAITokenProvider *OpenAITokenProvider,
+	settingService *SettingService,
+	payloadRepo UsageLogPayloadRepository,
 ) *OpenAIGatewayService {
 	svc := &OpenAIGatewayService{
 		accountRepo:         accountRepo,
@@ -386,6 +394,8 @@ func NewOpenAIGatewayService(
 		openaiWSResolver:      NewOpenAIWSProtocolResolver(cfg),
 		responseHeaderFilter:  compileResponseHeaderFilter(cfg),
 		codexSnapshotThrottle: newAccountWriteThrottle(openAICodexSnapshotPersistMinInterval),
+		settingService:        settingService,
+		payloadRepo:           payloadRepo,
 	}
 	svc.logOpenAIWSModeBootstrap()
 	return svc
@@ -2271,17 +2281,32 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		// Handle normal response
 		var usage *OpenAIUsage
 		var firstTokenMs *int
+		var respBody []byte
+		var respTruncated bool
+
+		// 报文审计：获取配置
+		var captureMaxSize int64
+		if payloadCfg, _ := s.settingService.GetPayloadLoggingSettings(ctx); payloadCfg != nil && payloadCfg.Enabled {
+			captureMaxSize = payloadCfg.MaxResponseSize
+		}
+
 		if reqStream {
-			streamResult, err := s.handleStreamingResponse(ctx, resp, c, account, startTime, originalModel, upstreamModel)
+			streamResult, err := s.handleStreamingResponse(ctx, resp, c, account, startTime, originalModel, upstreamModel, captureMaxSize)
 			if err != nil {
 				return nil, err
 			}
 			usage = streamResult.usage
 			firstTokenMs = streamResult.firstTokenMs
+			respBody = streamResult.responseBody
+			respTruncated = streamResult.responseTruncated
 		} else {
-			usage, err = s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, upstreamModel)
+			var nonStreamBody []byte
+			usage, nonStreamBody, err = s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, upstreamModel)
 			if err != nil {
 				return nil, err
+			}
+			if captureMaxSize > 0 {
+				respBody, respTruncated = TruncateBytesWithFlag(nonStreamBody, captureMaxSize)
 			}
 		}
 
@@ -2300,16 +2325,18 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		serviceTier := extractOpenAIServiceTier(reqBody)
 
 		return &OpenAIForwardResult{
-			RequestID:       resp.Header.Get("x-request-id"),
-			Usage:           *usage,
-			Model:           originalModel,
-			UpstreamModel:   upstreamModel,
-			ServiceTier:     serviceTier,
-			ReasoningEffort: reasoningEffort,
-			Stream:          reqStream,
-			OpenAIWSMode:    false,
-			Duration:        time.Since(startTime),
-			FirstTokenMs:    firstTokenMs,
+			RequestID:         resp.Header.Get("x-request-id"),
+			Usage:             *usage,
+			Model:             originalModel,
+			UpstreamModel:     upstreamModel,
+			ServiceTier:       serviceTier,
+			ReasoningEffort:   reasoningEffort,
+			Stream:            reqStream,
+			OpenAIWSMode:      false,
+			Duration:          time.Since(startTime),
+			FirstTokenMs:      firstTokenMs,
+			ResponseBody:      respBody,
+			ResponseTruncated: respTruncated,
 		}, nil
 	}
 }
@@ -2436,17 +2463,32 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 
 	var usage *OpenAIUsage
 	var firstTokenMs *int
+	var respBody []byte
+	var respTruncated bool
+
+	// 报文审计：获取配置
+	var ptCaptureMaxSize int64
+	if payloadCfg, _ := s.settingService.GetPayloadLoggingSettings(ctx); payloadCfg != nil && payloadCfg.Enabled {
+		ptCaptureMaxSize = payloadCfg.MaxResponseSize
+	}
+
 	if reqStream {
-		result, err := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime)
+		result, err := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime, ptCaptureMaxSize)
 		if err != nil {
 			return nil, err
 		}
 		usage = result.usage
 		firstTokenMs = result.firstTokenMs
+		respBody = result.responseBody
+		respTruncated = result.responseTruncated
 	} else {
-		usage, err = s.handleNonStreamingResponsePassthrough(ctx, resp, c)
+		var nonStreamBody []byte
+		usage, nonStreamBody, err = s.handleNonStreamingResponsePassthrough(ctx, resp, c)
 		if err != nil {
 			return nil, err
+		}
+		if ptCaptureMaxSize > 0 {
+			respBody, respTruncated = TruncateBytesWithFlag(nonStreamBody, ptCaptureMaxSize)
 		}
 	}
 
@@ -2459,15 +2501,17 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	}
 
 	return &OpenAIForwardResult{
-		RequestID:       resp.Header.Get("x-request-id"),
-		Usage:           *usage,
-		Model:           reqModel,
-		ServiceTier:     extractOpenAIServiceTierFromBody(body),
-		ReasoningEffort: reasoningEffort,
-		Stream:          reqStream,
-		OpenAIWSMode:    false,
-		Duration:        time.Since(startTime),
-		FirstTokenMs:    firstTokenMs,
+		RequestID:         resp.Header.Get("x-request-id"),
+		Usage:             *usage,
+		Model:             reqModel,
+		ServiceTier:       extractOpenAIServiceTierFromBody(body),
+		ReasoningEffort:   reasoningEffort,
+		Stream:            reqStream,
+		OpenAIWSMode:      false,
+		Duration:          time.Since(startTime),
+		FirstTokenMs:      firstTokenMs,
+		ResponseBody:      respBody,
+		ResponseTruncated: respTruncated,
 	}, nil
 }
 
@@ -2709,8 +2753,10 @@ func collectOpenAIPassthroughTimeoutHeaders(h http.Header) []string {
 }
 
 type openaiStreamingResultPassthrough struct {
-	usage        *OpenAIUsage
-	firstTokenMs *int
+	usage             *OpenAIUsage
+	firstTokenMs      *int
+	responseBody      []byte
+	responseTruncated bool
 }
 
 func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
@@ -2719,6 +2765,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	c *gin.Context,
 	account *Account,
 	startTime time.Time,
+	captureMaxSize int64,
 ) (*openaiStreamingResultPassthrough, error) {
 	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 
@@ -2743,6 +2790,29 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	sawDone := false
 	sawTerminalEvent := false
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
+
+	// 报文审计：流式响应采样缓冲
+	var responseBuf *bytes.Buffer
+	var respTruncated bool
+	if captureMaxSize > 0 {
+		responseBuf = streamPayloadBufPool.Get().(*bytes.Buffer)
+		responseBuf.Reset()
+		defer streamPayloadBufPool.Put(responseBuf)
+	}
+
+	makeResult := func() *openaiStreamingResultPassthrough {
+		r := &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}
+		if responseBuf != nil && responseBuf.Len() > 0 {
+			captured := responseBuf.Bytes()
+			if respTruncated {
+				captured, _ = TruncateBytesWithFlag(captured, int64(len(captured)))
+			}
+			r.responseBody = make([]byte, len(captured))
+			copy(r.responseBody, captured)
+			r.responseTruncated = respTruncated
+		}
+		return r
+	}
 
 	scanner := bufio.NewScanner(resp.Body)
 	maxLineSize := defaultMaxLineSize
@@ -2771,6 +2841,20 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			s.parseSSEUsageBytes(dataBytes, usage)
 		}
 
+		// 报文审计：采样流式响应
+		if responseBuf != nil && !respTruncated {
+			chunk := []byte(line + "\n")
+			remaining := captureMaxSize - int64(responseBuf.Len())
+			if remaining <= 0 {
+				respTruncated = true
+			} else if int64(len(chunk)) > remaining {
+				responseBuf.Write(chunk[:remaining])
+				respTruncated = true
+			} else {
+				responseBuf.Write(chunk)
+			}
+		}
+
 		if !clientDisconnected {
 			if _, err := fmt.Fprintln(w, line); err != nil {
 				clientDisconnected = true
@@ -2782,17 +2866,17 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	}
 	if err := scanner.Err(); err != nil {
 		if sawTerminalEvent {
-			return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, nil
+			return makeResult(), nil
 		}
 		if clientDisconnected {
-			return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream usage incomplete after disconnect: %w", err)
+			return makeResult(), fmt.Errorf("stream usage incomplete after disconnect: %w", err)
 		}
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream usage incomplete: %w", err)
+			return makeResult(), fmt.Errorf("stream usage incomplete: %w", err)
 		}
 		if errors.Is(err, bufio.ErrTooLong) {
 			logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] SSE line too long: account=%d max_size=%d error=%v", account.ID, maxLineSize, err)
-			return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, err
+			return makeResult(), err
 		}
 		logger.LegacyPrintf("service.openai_gateway",
 			"[OpenAI passthrough] 流读取异常中断: account=%d request_id=%s err=%v",
@@ -2800,7 +2884,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			upstreamRequestID,
 			err,
 		)
-		return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream read error: %w", err)
+		return makeResult(), fmt.Errorf("stream read error: %w", err)
 	}
 	if !clientDisconnected && !sawDone && !sawTerminalEvent && ctx.Err() == nil {
 		logger.FromContext(ctx).With(
@@ -2808,17 +2892,17 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			zap.Int64("account_id", account.ID),
 			zap.String("upstream_request_id", upstreamRequestID),
 		).Info("OpenAI passthrough 上游流在未收到 [DONE] 时结束，疑似断流")
-		return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, errors.New("stream usage incomplete: missing terminal event")
+		return makeResult(), errors.New("stream usage incomplete: missing terminal event")
 	}
 
-	return &openaiStreamingResultPassthrough{usage: usage, firstTokenMs: firstTokenMs}, nil
+	return makeResult(), nil
 }
 
 func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	ctx context.Context,
 	resp *http.Response,
 	c *gin.Context,
-) (*OpenAIUsage, error) {
+) (*OpenAIUsage, []byte, error) {
 	maxBytes := resolveUpstreamResponseReadLimit(s.cfg)
 	body, err := readUpstreamResponseBodyLimited(resp.Body, maxBytes)
 	if err != nil {
@@ -2831,7 +2915,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 				},
 			})
 		}
-		return nil, err
+		return nil, nil, err
 	}
 
 	usage := &OpenAIUsage{}
@@ -2854,7 +2938,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 		contentType = "application/json"
 	}
 	c.Data(resp.StatusCode, contentType, body)
-	return usage, nil
+	return usage, body, nil
 }
 
 func writeOpenAIPassthroughResponseHeaders(dst http.Header, src http.Header, filter *responseheaders.CompiledHeaderFilter) {
@@ -3266,11 +3350,13 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 
 // openaiStreamingResult streaming response result
 type openaiStreamingResult struct {
-	usage        *OpenAIUsage
-	firstTokenMs *int
+	usage            *OpenAIUsage
+	firstTokenMs     *int
+	responseBody     []byte
+	responseTruncated bool
 }
 
-func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel string) (*openaiStreamingResult, error) {
+func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel string, captureMaxSize int64) (*openaiStreamingResult, error) {
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	}
@@ -3302,6 +3388,15 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 
 	usage := &OpenAIUsage{}
 	var firstTokenMs *int
+
+	// 报文审计：流式响应缓冲
+	var responseBuf *bytes.Buffer
+	if captureMaxSize > 0 {
+		responseBuf = streamPayloadBufPool.Get().(*bytes.Buffer)
+		responseBuf.Reset()
+		defer streamPayloadBufPool.Put(responseBuf)
+	}
+
 	scanner := bufio.NewScanner(resp.Body)
 	maxLineSize := defaultMaxLineSize
 	if s.cfg != nil && s.cfg.Gateway.MaxLineSize > 0 {
@@ -3368,8 +3463,20 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 	}
 
 	needModelReplace := originalModel != mappedModel
-	resultWithUsage := func() *openaiStreamingResult {
-		return &openaiStreamingResult{usage: usage, firstTokenMs: firstTokenMs}
+	makeStreamResult := func() *openaiStreamingResult {
+		r := &openaiStreamingResult{usage: usage, firstTokenMs: firstTokenMs}
+		if responseBuf != nil && responseBuf.Len() > 0 {
+			captured := responseBuf.Bytes()
+			truncated := int64(responseBuf.Len()) >= captureMaxSize
+			// 流式截断可能在 UTF-8 多字节字符中间裁切，落库前统一做安全校正
+			if truncated {
+				captured, _ = TruncateBytesWithFlag(captured, int64(len(captured)))
+			}
+			r.responseBody = make([]byte, len(captured))
+			copy(r.responseBody, captured)
+			r.responseTruncated = truncated
+		}
+		return r
 	}
 	finalizeStream := func() (*openaiStreamingResult, error) {
 		if !clientDisconnected {
@@ -3379,9 +3486,9 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			}
 		}
 		if !sawTerminalEvent {
-			return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
+			return makeStreamResult(), fmt.Errorf("stream usage incomplete: missing terminal event")
 		}
-		return resultWithUsage(), nil
+		return makeStreamResult(), nil
 	}
 	handleScanErr := func(scanErr error) (*openaiStreamingResult, error, bool) {
 		if scanErr == nil {
@@ -3389,24 +3496,24 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 		}
 		if sawTerminalEvent {
 			logger.LegacyPrintf("service.openai_gateway", "Upstream scan ended after terminal event: %v", scanErr)
-			return resultWithUsage(), nil, true
+			return makeStreamResult(), nil, true
 		}
 		// 客户端断开/取消请求时，上游读取往往会返回 context canceled。
 		// /v1/responses 的 SSE 事件必须符合 OpenAI 协议；这里不注入自定义 error event，避免下游 SDK 解析失败。
 		if errors.Is(scanErr, context.Canceled) || errors.Is(scanErr, context.DeadlineExceeded) {
-			return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", scanErr), true
+			return makeStreamResult(), fmt.Errorf("stream usage incomplete: %w", scanErr), true
 		}
 		// 客户端已断开时，上游出错仅影响体验，不影响计费；返回已收集 usage
 		if clientDisconnected {
-			return resultWithUsage(), fmt.Errorf("stream usage incomplete after disconnect: %w", scanErr), true
+			return makeStreamResult(), fmt.Errorf("stream usage incomplete after disconnect: %w", scanErr), true
 		}
 		if errors.Is(scanErr, bufio.ErrTooLong) {
 			logger.LegacyPrintf("service.openai_gateway", "SSE line too long: account=%d max_size=%d error=%v", account.ID, maxLineSize, scanErr)
 			sendErrorEvent("response_too_large")
-			return resultWithUsage(), scanErr, true
+			return makeStreamResult(), scanErr, true
 		}
 		sendErrorEvent("stream_read_error")
-		return resultWithUsage(), fmt.Errorf("stream read error: %w", scanErr), true
+		return makeStreamResult(), fmt.Errorf("stream read error: %w", scanErr), true
 	}
 	processSSELine := func(line string, queueDrained bool) {
 		lastDataAt = time.Now()
@@ -3458,6 +3565,17 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				ms := int(time.Since(startTime).Milliseconds())
 				firstTokenMs = &ms
 			}
+
+			// 报文审计：捕获流式响应片段
+			if responseBuf != nil && int64(responseBuf.Len()) < captureMaxSize {
+				remaining := captureMaxSize - int64(responseBuf.Len())
+				chunk := []byte(line + "\n")
+				if int64(len(chunk)) > remaining {
+					chunk = chunk[:remaining]
+				}
+				responseBuf.Write(chunk)
+			}
+
 			s.parseSSEUsageBytes(dataBytes, usage)
 			return
 		}
@@ -3540,7 +3658,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				continue
 			}
 			if clientDisconnected {
-				return resultWithUsage(), fmt.Errorf("stream usage incomplete after timeout")
+				return makeStreamResult(), fmt.Errorf("stream usage incomplete after timeout")
 			}
 			logger.LegacyPrintf("service.openai_gateway", "Stream data interval timeout: account=%d model=%s interval=%s", account.ID, originalModel, streamInterval)
 			// 处理流超时，可能标记账户为临时不可调度或错误状态
@@ -3548,7 +3666,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				s.rateLimitService.HandleStreamTimeout(ctx, account, originalModel)
 			}
 			sendErrorEvent("stream_timeout")
-			return resultWithUsage(), fmt.Errorf("stream data interval timeout")
+			return makeStreamResult(), fmt.Errorf("stream data interval timeout")
 
 		case <-keepaliveCh:
 			if clientDisconnected {
@@ -3669,7 +3787,7 @@ func extractOpenAIUsageFromJSONBytes(body []byte) (OpenAIUsage, bool) {
 	}, true
 }
 
-func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, originalModel, mappedModel string) (*OpenAIUsage, error) {
+func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, originalModel, mappedModel string) (*OpenAIUsage, []byte, error) {
 	maxBytes := resolveUpstreamResponseReadLimit(s.cfg)
 	body, err := readUpstreamResponseBodyLimited(resp.Body, maxBytes)
 	if err != nil {
@@ -3682,19 +3800,20 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 				},
 			})
 		}
-		return nil, err
+		return nil, nil, err
 	}
 
 	if account.Type == AccountTypeOAuth {
 		bodyLooksLikeSSE := bytes.Contains(body, []byte("data:")) || bytes.Contains(body, []byte("event:"))
 		if isEventStreamResponse(resp.Header) || bodyLooksLikeSSE {
-			return s.handleOAuthSSEToJSON(resp, c, body, originalModel, mappedModel)
+			usage, oauthErr := s.handleOAuthSSEToJSON(resp, c, body, originalModel, mappedModel)
+			return usage, body, oauthErr
 		}
 	}
 
 	usageValue, usageOK := extractOpenAIUsageFromJSONBytes(body)
 	if !usageOK {
-		return nil, fmt.Errorf("parse response: invalid json response")
+		return nil, nil, fmt.Errorf("parse response: invalid json response")
 	}
 	usage := &usageValue
 
@@ -3714,7 +3833,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 
 	c.Data(resp.StatusCode, contentType, body)
 
-	return usage, nil
+	return usage, body, nil
 }
 
 func isEventStreamResponse(header http.Header) bool {
@@ -4110,6 +4229,12 @@ type OpenAIRecordUsageInput struct {
 	IPAddress          string // 请求的客户端 IP 地址
 	RequestPayloadHash string
 	APIKeyService      APIKeyQuotaUpdater
+
+	// 报文审计
+	RequestPayload    []byte
+	ResponsePayload   []byte
+	RequestTruncated  bool
+	ResponseTruncated bool
 }
 
 // RecordUsage records usage and deducts balance
@@ -4223,6 +4348,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
+		if usageLog.ID > 0 && (len(input.RequestPayload) > 0 || len(input.ResponsePayload) > 0) {
+			writePayloadBestEffort(ctx, s.payloadRepo, usageLog.ID, input.RequestPayload, input.ResponsePayload, input.RequestTruncated, input.ResponseTruncated)
+		}
 		logger.LegacyPrintf("service.openai_gateway", "[SIMPLE MODE] Usage recorded (not billed): user=%d, tokens=%d", usageLog.UserID, usageLog.TotalTokens())
 		s.deferredService.ScheduleLastUsedUpdate(account.ID)
 		return nil
@@ -4247,6 +4375,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		return billingErr
 	}
 	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
+	if usageLog.ID > 0 && (len(input.RequestPayload) > 0 || len(input.ResponsePayload) > 0) {
+		writePayloadBestEffort(ctx, s.payloadRepo, usageLog.ID, input.RequestPayload, input.ResponsePayload, input.RequestTruncated, input.ResponseTruncated)
+	}
 
 	return nil
 }

@@ -506,6 +506,10 @@ type ForwardResult struct {
 	// Sora 媒体字段
 	MediaType string // image / video / prompt
 	MediaURL  string // 生成后的媒体地址（可选）
+
+	// 报文审计
+	ResponseBody      []byte // 非流式响应原始 body（仅 payloadLogging 开启时填充）
+	ResponseTruncated bool   // 响应体是否被截断
 }
 
 // UpstreamFailoverError indicates an upstream error that should trigger account failover.
@@ -570,6 +574,7 @@ type GatewayService struct {
 	debugClaudeMimic      atomic.Bool
 	debugGatewayBodyFile  atomic.Pointer[os.File] // non-nil when SUB2API_DEBUG_GATEWAY_BODY is set
 	tlsFPProfileService   *TLSFingerprintProfileService
+	payloadRepo           UsageLogPayloadRepository // 报文审计存储
 }
 
 // NewGatewayService creates a new GatewayService
@@ -597,6 +602,7 @@ func NewGatewayService(
 	digestStore *DigestSessionStore,
 	settingService *SettingService,
 	tlsFPProfileService *TLSFingerprintProfileService,
+	payloadRepo UsageLogPayloadRepository,
 ) *GatewayService {
 	userGroupRateTTL := resolveUserGroupRateCacheTTL(cfg)
 	modelsListTTL := resolveModelsListCacheTTL(cfg)
@@ -629,6 +635,7 @@ func NewGatewayService(
 		modelsListCacheTTL:   modelsListTTL,
 		responseHeaderFilter: compileResponseHeaderFilter(cfg),
 		tlsFPProfileService:  tlsFPProfileService,
+		payloadRepo:          payloadRepo,
 	}
 	svc.userGroupRateResolver = newUserGroupRateResolver(
 		userGroupRateRepo,
@@ -4639,8 +4646,17 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	var usage *ClaudeUsage
 	var firstTokenMs *int
 	var clientDisconnect bool
+	var respBody []byte
+	var respTruncated bool
+
+	// 报文审计：获取配置
+	var captureMaxSize int64
+	if payloadCfg, _ := s.settingService.GetPayloadLoggingSettings(ctx); payloadCfg != nil && payloadCfg.Enabled {
+		captureMaxSize = payloadCfg.MaxResponseSize
+	}
+
 	if reqStream {
-		streamResult, err := s.handleStreamingResponse(ctx, resp, c, account, startTime, originalModel, reqModel, shouldMimicClaudeCode)
+		streamResult, err := s.handleStreamingResponse(ctx, resp, c, account, startTime, originalModel, reqModel, shouldMimicClaudeCode, captureMaxSize)
 		if err != nil {
 			if err.Error() == "have error in stream" {
 				return nil, &UpstreamFailoverError{
@@ -4652,22 +4668,30 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		usage = streamResult.usage
 		firstTokenMs = streamResult.firstTokenMs
 		clientDisconnect = streamResult.clientDisconnect
+		respBody = streamResult.responseBody
+		respTruncated = streamResult.responseTruncated
 	} else {
-		usage, err = s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, reqModel)
+		var nonStreamBody []byte
+		usage, nonStreamBody, err = s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, reqModel)
 		if err != nil {
 			return nil, err
+		}
+		if captureMaxSize > 0 {
+			respBody, respTruncated = TruncateBytesWithFlag(nonStreamBody, captureMaxSize)
 		}
 	}
 
 	return &ForwardResult{
-		RequestID:        resp.Header.Get("x-request-id"),
-		Usage:            *usage,
-		Model:            originalModel, // 使用原始模型用于计费和日志
-		UpstreamModel:    mappedModel,
-		Stream:           reqStream,
-		Duration:         time.Since(startTime),
-		FirstTokenMs:     firstTokenMs,
-		ClientDisconnect: clientDisconnect,
+		RequestID:         resp.Header.Get("x-request-id"),
+		Usage:             *usage,
+		Model:             originalModel, // 使用原始模型用于计费和日志
+		UpstreamModel:     mappedModel,
+		Stream:            reqStream,
+		Duration:          time.Since(startTime),
+		FirstTokenMs:      firstTokenMs,
+		ClientDisconnect:  clientDisconnect,
+		ResponseBody:      respBody,
+		ResponseTruncated: respTruncated,
 	}, nil
 }
 
@@ -6711,14 +6735,45 @@ func (s *GatewayService) handleRetryExhaustedError(ctx context.Context, resp *ht
 
 // streamingResult 流式响应结果
 type streamingResult struct {
-	usage            *ClaudeUsage
-	firstTokenMs     *int
-	clientDisconnect bool // 客户端是否在流式传输过程中断开
+	usage             *ClaudeUsage
+	firstTokenMs      *int
+	clientDisconnect  bool   // 客户端是否在流式传输过程中断开
+	responseBody      []byte // 流式响应采样（报文审计）
+	responseTruncated bool   // 流式响应是否被截断
 }
 
-func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel string, mimicClaudeCode bool) (*streamingResult, error) {
+func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel string, mimicClaudeCode bool, captureMaxSize int64) (*streamingResult, error) {
 	// 更新5h窗口状态
 	s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
+
+	// 报文审计：初始化采样 buffer
+	var responseBuf *bytes.Buffer
+	var respTruncated bool
+	if captureMaxSize > 0 {
+		responseBuf = streamPayloadBufPool.Get().(*bytes.Buffer)
+		responseBuf.Reset()
+		defer streamPayloadBufPool.Put(responseBuf)
+	}
+
+	// makeStreamResult 统一构造 streamingResult，自动填充报文审计数据
+	makeStreamResult := func(usage *ClaudeUsage, firstTokenMs *int, clientDisconnect bool) *streamingResult {
+		sr := &streamingResult{
+			usage:            usage,
+			firstTokenMs:     firstTokenMs,
+			clientDisconnect: clientDisconnect,
+		}
+		if responseBuf != nil && responseBuf.Len() > 0 {
+			captured := responseBuf.Bytes()
+			// 流式截断可能在 UTF-8 多字节字符中间裁切，落库前统一做安全校正
+			if respTruncated {
+				captured, _ = TruncateBytesWithFlag(captured, int64(len(captured)))
+			}
+			sr.responseBody = make([]byte, len(captured))
+			copy(sr.responseBody, captured)
+			sr.responseTruncated = respTruncated
+		}
+		return sr
+	}
 
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -6963,30 +7018,30 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 			if !ok {
 				// 上游完成，返回结果
 				if !sawTerminalEvent {
-					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, fmt.Errorf("stream usage incomplete: missing terminal event")
+					return makeStreamResult(usage, firstTokenMs, clientDisconnected), fmt.Errorf("stream usage incomplete: missing terminal event")
 				}
-				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, nil
+				return makeStreamResult(usage, firstTokenMs, clientDisconnected), nil
 			}
 			if ev.err != nil {
 				if sawTerminalEvent {
-					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, nil
+					return makeStreamResult(usage, firstTokenMs, clientDisconnected), nil
 				}
 				// 检测 context 取消（客户端断开会导致 context 取消，进而影响上游读取）
 				if errors.Is(ev.err, context.Canceled) || errors.Is(ev.err, context.DeadlineExceeded) {
-					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, fmt.Errorf("stream usage incomplete: %w", ev.err)
+					return makeStreamResult(usage, firstTokenMs, true), fmt.Errorf("stream usage incomplete: %w", ev.err)
 				}
 				// 客户端已通过写入失败检测到断开，上游也出错了，返回已收集的 usage
 				if clientDisconnected {
-					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, fmt.Errorf("stream usage incomplete after disconnect: %w", ev.err)
+					return makeStreamResult(usage, firstTokenMs, true), fmt.Errorf("stream usage incomplete after disconnect: %w", ev.err)
 				}
 				// 客户端未断开，正常的错误处理
 				if errors.Is(ev.err, bufio.ErrTooLong) {
 					logger.LegacyPrintf("service.gateway", "SSE line too long: account=%d max_size=%d error=%v", account.ID, maxLineSize, ev.err)
 					sendErrorEvent("response_too_large")
-					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, ev.err
+					return makeStreamResult(usage, firstTokenMs, false), ev.err
 				}
 				sendErrorEvent("stream_read_error")
-				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream read error: %w", ev.err)
+				return makeStreamResult(usage, firstTokenMs, false), fmt.Errorf("stream read error: %w", ev.err)
 			}
 			line := ev.line
 			trimmed := strings.TrimSpace(line)
@@ -7000,7 +7055,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 				pendingEventLines = pendingEventLines[:0]
 				if err != nil {
 					if clientDisconnected {
-						return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, nil
+						return makeStreamResult(usage, firstTokenMs, true), nil
 					}
 					return nil, err
 				}
@@ -7014,6 +7069,21 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 						}
 						flusher.Flush()
 						lastDataAt = time.Now()
+					}
+					// 报文审计：采样流式响应
+					if responseBuf != nil && !respTruncated {
+						remaining := captureMaxSize - int64(responseBuf.Len())
+						if remaining <= 0 {
+							respTruncated = true
+						} else {
+							blockBytes := []byte(block)
+							if int64(len(blockBytes)) <= remaining {
+								responseBuf.Write(blockBytes)
+							} else {
+								responseBuf.Write(blockBytes[:remaining])
+								respTruncated = true
+							}
+						}
 					}
 					if data != "" {
 						if firstTokenMs == nil && data != "[DONE]" {
@@ -7036,7 +7106,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 				continue
 			}
 			if clientDisconnected {
-				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, fmt.Errorf("stream usage incomplete after timeout")
+				return makeStreamResult(usage, firstTokenMs, true), fmt.Errorf("stream usage incomplete after timeout")
 			}
 			logger.LegacyPrintf("service.gateway", "Stream data interval timeout: account=%d model=%s interval=%s", account.ID, originalModel, streamInterval)
 			// 处理流超时，可能标记账户为临时不可调度或错误状态
@@ -7044,7 +7114,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 				s.rateLimitService.HandleStreamTimeout(ctx, account, originalModel)
 			}
 			sendErrorEvent("stream_timeout")
-			return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream data interval timeout")
+			return makeStreamResult(usage, firstTokenMs, false), fmt.Errorf("stream data interval timeout")
 
 		case <-keepaliveCh:
 			if clientDisconnected {
@@ -7285,7 +7355,7 @@ func rewriteCacheCreationJSON(usageObj map[string]any, target string) bool {
 	return true
 }
 
-func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, originalModel, mappedModel string) (*ClaudeUsage, error) {
+func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, originalModel, mappedModel string) (*ClaudeUsage, []byte, error) {
 	// 更新5h窗口状态
 	s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
 
@@ -7302,7 +7372,7 @@ func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *h
 				},
 			})
 		}
-		return nil, err
+		return nil, nil, err
 	}
 
 	// 解析usage
@@ -7310,7 +7380,7 @@ func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *h
 		Usage ClaudeUsage `json:"usage"`
 	}
 	if err := json.Unmarshal(body, &response); err != nil {
-		return nil, fmt.Errorf("parse response: %w", err)
+		return nil, nil, fmt.Errorf("parse response: %w", err)
 	}
 
 	// 解析嵌套的 cache_creation 对象中的 5m/1h 明细
@@ -7363,7 +7433,7 @@ func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *h
 	// 写入响应
 	c.Data(resp.StatusCode, contentType, body)
 
-	return &response.Usage, nil
+	return &response.Usage, body, nil
 }
 
 // replaceModelInResponseBody 替换响应体中的model字段
@@ -7410,6 +7480,12 @@ type RecordUsageInput struct {
 	RequestPayloadHash string             // 请求体语义哈希，用于降低 request_id 误复用时的静默误去重风险
 	ForceCacheBilling  bool               // 强制缓存计费：将 input_tokens 转为 cache_read 计费（用于粘性会话切换）
 	APIKeyService      APIKeyQuotaUpdater // 可选：用于更新API Key配额
+
+	// 报文审计
+	RequestPayload    []byte
+	ResponsePayload   []byte
+	RequestTruncated  bool
+	ResponseTruncated bool
 }
 
 // APIKeyQuotaUpdater defines the interface for updating API Key quota and rate limit usage
@@ -7694,6 +7770,25 @@ func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usage
 	}
 }
 
+// writePayloadBestEffort 最大努力写入报文，失败仅记日志
+func writePayloadBestEffort(ctx context.Context, repo UsageLogPayloadRepository, usageLogID int64, reqPayload, respPayload []byte, reqTruncated, respTruncated bool) {
+	if repo == nil {
+		return
+	}
+	payload := &UsageLogPayloadRecord{
+		UsageLogID:        usageLogID,
+		RequestBody:       stringPtrFromBytes(reqPayload),
+		ResponseBody:      stringPtrFromBytes(respPayload),
+		RequestTruncated:  reqTruncated,
+		ResponseTruncated: respTruncated,
+	}
+	payloadCtx, cancel := detachedBillingContext(ctx)
+	defer cancel()
+	if err := repo.Upsert(payloadCtx, payload); err != nil {
+		logger.LegacyPrintf("service.gateway", "Write usage log payload failed: usage_log_id=%d, error=%v", usageLogID, err)
+	}
+}
+
 // RecordUsage 记录使用量并扣费（或更新订阅用量）
 func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInput) error {
 	result := input.Result
@@ -7853,6 +7948,9 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
+		if usageLog.ID > 0 && (len(input.RequestPayload) > 0 || len(input.ResponsePayload) > 0) {
+			writePayloadBestEffort(ctx, s.payloadRepo, usageLog.ID, input.RequestPayload, input.ResponsePayload, input.RequestTruncated, input.ResponseTruncated)
+		}
 		logger.LegacyPrintf("service.gateway", "[SIMPLE MODE] Usage recorded (not billed): user=%d, tokens=%d", usageLog.UserID, usageLog.TotalTokens())
 		s.deferredService.ScheduleLastUsedUpdate(account.ID)
 		return nil
@@ -7877,6 +7975,9 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 		return billingErr
 	}
 	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
+	if usageLog.ID > 0 && (len(input.RequestPayload) > 0 || len(input.ResponsePayload) > 0) {
+		writePayloadBestEffort(ctx, s.payloadRepo, usageLog.ID, input.RequestPayload, input.ResponsePayload, input.RequestTruncated, input.ResponseTruncated)
+	}
 
 	return nil
 }
@@ -7897,6 +7998,12 @@ type RecordUsageLongContextInput struct {
 	LongContextMultiplier float64            // 超出阈值部分的倍率（如 2.0）
 	ForceCacheBilling     bool               // 强制缓存计费：将 input_tokens 转为 cache_read 计费（用于粘性会话切换）
 	APIKeyService         APIKeyQuotaUpdater // API Key 配额服务（可选）
+
+	// 报文审计
+	RequestPayload    []byte
+	ResponsePayload   []byte
+	RequestTruncated  bool
+	ResponseTruncated bool
 }
 
 // RecordUsageWithLongContext 记录使用量并扣费，支持长上下文双倍计费（用于 Gemini）
@@ -8036,6 +8143,9 @@ func (s *GatewayService) RecordUsageWithLongContext(ctx context.Context, input *
 
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
+		if usageLog.ID > 0 && (len(input.RequestPayload) > 0 || len(input.ResponsePayload) > 0) {
+			writePayloadBestEffort(ctx, s.payloadRepo, usageLog.ID, input.RequestPayload, input.ResponsePayload, input.RequestTruncated, input.ResponseTruncated)
+		}
 		logger.LegacyPrintf("service.gateway", "[SIMPLE MODE] Usage recorded (not billed): user=%d, tokens=%d", usageLog.UserID, usageLog.TotalTokens())
 		s.deferredService.ScheduleLastUsedUpdate(account.ID)
 		return nil
@@ -8060,6 +8170,9 @@ func (s *GatewayService) RecordUsageWithLongContext(ctx context.Context, input *
 		return billingErr
 	}
 	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
+	if usageLog.ID > 0 && (len(input.RequestPayload) > 0 || len(input.ResponsePayload) > 0) {
+		writePayloadBestEffort(ctx, s.payloadRepo, usageLog.ID, input.RequestPayload, input.ResponsePayload, input.RequestTruncated, input.ResponseTruncated)
+	}
 
 	return nil
 }
