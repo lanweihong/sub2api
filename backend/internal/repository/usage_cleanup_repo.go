@@ -13,6 +13,7 @@ import (
 	dbusagecleanuptask "github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/lib/pq"
 )
 
 type usageCleanupRepository struct {
@@ -310,14 +311,28 @@ func (r *usageCleanupRepository) DeleteUsageLogsBatch(ctx context.Context, filte
 	}
 	defer func() { _ = rows.Close() }()
 
-	var deleted int64
+	var deletedIDs []int64
 	for rows.Next() {
-		deleted++
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return 0, err
+		}
+		deletedIDs = append(deletedIDs, id)
 	}
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}
-	return deleted, nil
+
+	// 同步清理关联的报文审计数据，避免产生孤儿 payload 记录
+	if len(deletedIDs) > 0 {
+		cleanupQuery := `DELETE FROM usage_log_payloads WHERE usage_log_id = ANY($1)`
+		if _, err := r.sql.ExecContext(ctx, cleanupQuery, pq.Array(deletedIDs)); err != nil {
+			// payload 清理失败仅记日志，不阻塞主清理流程
+			_ = err
+		}
+	}
+
+	return int64(len(deletedIDs)), nil
 }
 
 func buildUsageCleanupWhere(filters service.UsageCleanupFilters) (string, []any) {

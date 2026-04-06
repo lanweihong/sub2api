@@ -344,6 +344,17 @@ func ProvideIdempotencyCleanupService(repo IdempotencyRepository, cfg *config.Co
 	return svc
 }
 
+// ProvidePayloadCleanupService creates and starts PayloadCleanupService.
+func ProvidePayloadCleanupService(
+	payloadRepo UsageLogPayloadRepository,
+	settingService *SettingService,
+	timingWheel *TimingWheelService,
+) *PayloadCleanupService {
+	svc := NewPayloadCleanupService(payloadRepo, settingService, timingWheel)
+	svc.Start()
+	return svc
+}
+
 // ProvideScheduledTestService creates ScheduledTestService.
 func ProvideScheduledTestService(
 	planRepo ScheduledTestPlanRepository,
@@ -487,6 +498,7 @@ var ProviderSet = wire.NewSet(
 	ProvideIdempotencyCoordinator,
 	ProvideSystemOperationLockService,
 	ProvideIdempotencyCleanupService,
+	ProvidePayloadCleanupService,
 	ProvideScheduledTestService,
 	ProvideScheduledTestRunnerService,
 	NewGroupCapacityService,
