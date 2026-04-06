@@ -163,6 +163,7 @@ type usageLogCreateResult struct {
 }
 
 type usageLogBestEffortRequest struct {
+	log      *service.UsageLog
 	prepared usageLogInsertPrepared
 	apiKeyID int64
 	resultCh chan error
@@ -274,6 +275,7 @@ func (r *usageLogRepository) CreateBestEffort(ctx context.Context, log *service.
 	}
 
 	req := usageLogBestEffortRequest{
+		log:      log,
 		prepared: prepareUsageLogInsert(log),
 		apiKeyID: log.APIKeyID,
 		resultCh: make(chan error, 1),
@@ -623,6 +625,7 @@ func (r *usageLogRepository) flushBestEffortBatch(db *sql.DB, batch []usageLogBe
 	}
 
 	type bestEffortGroup struct {
+		log      *service.UsageLog
 		prepared usageLogInsertPrepared
 		apiKeyID int64
 		key      string
@@ -631,9 +634,15 @@ func (r *usageLogRepository) flushBestEffortBatch(db *sql.DB, batch []usageLogBe
 
 	groupsByKey := make(map[string]*bestEffortGroup, len(batch))
 	groupOrder := make([]*bestEffortGroup, 0, len(batch))
-	preparedList := make([]usageLogInsertPrepared, 0, len(batch))
+	preparedByKey := make(map[string]usageLogInsertPrepared, len(batch))
+	uniqueOrder := make([]string, 0, len(batch))
+	fallback := make([]*bestEffortGroup, 0)
 
 	for idx, req := range batch {
+		if req.log == nil {
+			sendUsageLogBestEffortResult(req.resultCh, nil)
+			continue
+		}
 		prepared := req.prepared
 		key := fmt.Sprintf("__best_effort_%d", idx)
 		if prepared.requestID != "" {
@@ -642,49 +651,109 @@ func (r *usageLogRepository) flushBestEffortBatch(db *sql.DB, batch []usageLogBe
 		group, exists := groupsByKey[key]
 		if !exists {
 			group = &bestEffortGroup{
+				log:      req.log,
 				prepared: prepared,
 				apiKeyID: req.apiKeyID,
 				key:      key,
 			}
 			groupsByKey[key] = group
 			groupOrder = append(groupOrder, group)
-			preparedList = append(preparedList, prepared)
+			if prepared.requestID == "" {
+				fallback = append(fallback, group)
+			} else {
+				uniqueOrder = append(uniqueOrder, key)
+				preparedByKey[key] = prepared
+			}
 		}
 		group.reqs = append(group.reqs, req)
 	}
 
-	if len(preparedList) == 0 {
-		for _, req := range batch {
-			sendUsageLogBestEffortResult(req.resultCh, nil)
+	if len(uniqueOrder) > 0 {
+		insertedMap, stateMap, safeFallback, err := r.batchInsertUsageLogs(db, uniqueOrder, preparedByKey)
+		if err != nil {
+			logger.LegacyPrintf("repository.usage_log", "best-effort batch insert failed: %v", err)
+			if safeFallback {
+				for _, key := range uniqueOrder {
+					if group := groupsByKey[key]; group != nil {
+						fallback = append(fallback, group)
+					}
+				}
+			} else {
+				for _, key := range uniqueOrder {
+					group := groupsByKey[key]
+					state, hasState := stateMap[key]
+					groupErr := err
+					if group != nil && hasState {
+						for _, req := range group.reqs {
+							if req.log == nil {
+								continue
+							}
+							req.log.ID = state.ID
+							req.log.CreatedAt = state.CreatedAt
+							req.log.RateMultiplier = preparedByKey[key].rateMultiplier
+						}
+						if r != nil && r.bestEffortRecent != nil {
+							r.bestEffortRecent.SetDefault(key, struct{}{})
+						}
+						groupErr = nil
+					} else if insertedMap[key] && group != nil {
+						groupErr = nil
+					}
+					if group != nil {
+						for _, req := range group.reqs {
+							sendUsageLogBestEffortResult(req.resultCh, groupErr)
+						}
+					}
+				}
+			}
+		} else {
+			for _, key := range uniqueOrder {
+				group := groupsByKey[key]
+				state, ok := stateMap[key]
+				groupErr := error(nil)
+				if !ok {
+					groupErr = fmt.Errorf("usage log batch state missing for key=%s", key)
+				} else if group != nil {
+					for _, req := range group.reqs {
+						if req.log == nil {
+							continue
+						}
+						req.log.ID = state.ID
+						req.log.CreatedAt = state.CreatedAt
+						req.log.RateMultiplier = preparedByKey[key].rateMultiplier
+					}
+					if r != nil && r.bestEffortRecent != nil {
+						r.bestEffortRecent.SetDefault(key, struct{}{})
+					}
+				}
+				if group != nil {
+					for _, req := range group.reqs {
+						sendUsageLogBestEffortResult(req.resultCh, groupErr)
+					}
+				}
+			}
 		}
-		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	query, args := buildUsageLogBestEffortInsertQuery(preparedList)
-	if _, err := db.ExecContext(ctx, query, args...); err != nil {
-		logger.LegacyPrintf("repository.usage_log", "best-effort batch insert failed: %v", err)
-		for _, group := range groupOrder {
-			singleErr := execUsageLogInsertNoResult(ctx, db, group.prepared)
-			if singleErr != nil {
-				logger.LegacyPrintf("repository.usage_log", "best-effort single fallback insert failed: %v", singleErr)
-			} else if group.prepared.requestID != "" && r != nil && r.bestEffortRecent != nil {
-				r.bestEffortRecent.SetDefault(group.key, struct{}{})
-			}
-			for _, req := range group.reqs {
-				sendUsageLogBestEffortResult(req.resultCh, singleErr)
-			}
+	for _, group := range fallback {
+		if group == nil || group.log == nil {
+			continue
 		}
-		return
-	}
-	for _, group := range groupOrder {
-		if group.prepared.requestID != "" && r != nil && r.bestEffortRecent != nil {
+		fallbackCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_, singleErr := r.createSingle(fallbackCtx, db, group.log)
+		cancel()
+		if singleErr != nil {
+			logger.LegacyPrintf("repository.usage_log", "best-effort single fallback insert failed: %v", singleErr)
+		} else if group.prepared.requestID != "" && r != nil && r.bestEffortRecent != nil {
 			r.bestEffortRecent.SetDefault(group.key, struct{}{})
 		}
 		for _, req := range group.reqs {
-			sendUsageLogBestEffortResult(req.resultCh, nil)
+			if req.log != nil {
+				req.log.ID = group.log.ID
+				req.log.CreatedAt = group.log.CreatedAt
+				req.log.RateMultiplier = group.log.RateMultiplier
+			}
+			sendUsageLogBestEffortResult(req.resultCh, singleErr)
 		}
 	}
 }

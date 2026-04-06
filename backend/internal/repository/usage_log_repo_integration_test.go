@@ -280,6 +280,10 @@ func TestUsageLogRepositoryCreateBestEffort_BatchPathDuplicateRequestID(t *testi
 
 	require.NoError(t, repo.CreateBestEffort(ctx, log1))
 	require.NoError(t, repo.CreateBestEffort(ctx, log2))
+	require.NotZero(t, log1.ID)
+	require.Equal(t, log1.ID, log2.ID)
+	require.False(t, log1.CreatedAt.IsZero())
+	require.Equal(t, log1.CreatedAt, log2.CreatedAt)
 
 	require.Eventually(t, func() bool {
 		var count int
