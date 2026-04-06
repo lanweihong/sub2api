@@ -248,6 +248,18 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 
+		// 报文审计
+		var reqPayload, respPayload []byte
+		var reqTruncated, respTruncated bool
+		if payloadCfg, _ := h.settingService.GetPayloadLoggingSettings(c.Request.Context()); payloadCfg != nil && payloadCfg.Enabled {
+			reqPayload, reqTruncated = service.TruncateBytesWithFlag(body, payloadCfg.MaxRequestSize)
+			if result.ResponseBody != nil {
+				respPayload, respTruncated = service.TruncateBytesWithFlag(result.ResponseBody, payloadCfg.MaxResponseSize)
+			} else if result.ResponseTruncated {
+				respTruncated = true
+			}
+		}
+
 		h.submitUsageRecordTask(func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 				Result:             result,
@@ -261,6 +273,10 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
 				APIKeyService:      h.apiKeyService,
+				RequestPayload:     reqPayload,
+				ResponsePayload:    respPayload,
+				RequestTruncated:   reqTruncated,
+				ResponseTruncated:  respTruncated,
 			}); err != nil {
 				reqLog.Error("gateway.responses.record_usage_failed",
 					zap.Int64("account_id", account.ID),

@@ -35,6 +35,7 @@ type SoraGatewayHandler struct {
 	soraGatewayService    *service.SoraGatewayService
 	billingCacheService   *service.BillingCacheService
 	usageRecordWorkerPool *service.UsageRecordWorkerPool
+	settingService        *service.SettingService
 	concurrencyHelper     *ConcurrencyHelper
 	maxAccountSwitches    int
 	streamMode            string
@@ -50,6 +51,7 @@ func NewSoraGatewayHandler(
 	concurrencyService *service.ConcurrencyService,
 	billingCacheService *service.BillingCacheService,
 	usageRecordWorkerPool *service.UsageRecordWorkerPool,
+	settingService *service.SettingService,
 	cfg *config.Config,
 ) *SoraGatewayHandler {
 	pingInterval := time.Duration(0)
@@ -77,6 +79,7 @@ func NewSoraGatewayHandler(
 		soraGatewayService:    soraGatewayService,
 		billingCacheService:   billingCacheService,
 		usageRecordWorkerPool: usageRecordWorkerPool,
+		settingService:        settingService,
 		concurrencyHelper:     NewConcurrencyHelper(concurrencyService, SSEPingFormatComment, pingInterval),
 		maxAccountSwitches:    maxAccountSwitches,
 		streamMode:            strings.ToLower(streamMode),
@@ -404,6 +407,16 @@ func (h *SoraGatewayHandler) ChatCompletions(c *gin.Context) {
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 
+		// 报文审计：捕获请求/响应报文
+		var reqPayload, respPayload []byte
+		var reqTruncated, respTruncated bool
+		if plCfg, _ := h.settingService.GetPayloadLoggingSettings(c.Request.Context()); plCfg != nil && plCfg.Enabled {
+			reqPayload, reqTruncated = service.TruncateBytesWithFlag(body, plCfg.MaxRequestSize)
+			if result.ResponseBody != nil {
+				respPayload, respTruncated = service.TruncateBytesWithFlag(result.ResponseBody, plCfg.MaxResponseSize)
+			}
+		}
+
 		// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
 		h.submitUsageRecordTask(func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
@@ -417,6 +430,10 @@ func (h *SoraGatewayHandler) ChatCompletions(c *gin.Context) {
 				UserAgent:          userAgent,
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
+				RequestPayload:     reqPayload,
+				ResponsePayload:    respPayload,
+				RequestTruncated:   reqTruncated,
+				ResponseTruncated:  respTruncated,
 			}); err != nil {
 				logger.L().With(
 					zap.String("component", "handler.sora_gateway.chat_completions"),

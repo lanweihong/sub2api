@@ -476,6 +476,18 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				result.ReasoningEffort = service.NormalizeClaudeOutputEffort(parsedReq.OutputEffort)
 			}
 
+			// 报文审计：捕获请求/响应报文
+			var reqPayload, respPayload []byte
+			var reqTruncated, respTruncated bool
+			if payloadCfg, _ := h.settingService.GetPayloadLoggingSettings(c.Request.Context()); payloadCfg != nil && payloadCfg.Enabled {
+				reqPayload, reqTruncated = service.TruncateBytesWithFlag(body, payloadCfg.MaxRequestSize)
+				if result.ResponseBody != nil {
+					respPayload, respTruncated = service.TruncateBytesWithFlag(result.ResponseBody, payloadCfg.MaxResponseSize)
+				} else if result.ResponseTruncated {
+					respTruncated = true
+				}
+			}
+
 			// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
 			h.submitUsageRecordTask(func(ctx context.Context) {
 				if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
@@ -491,6 +503,10 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					RequestPayloadHash: requestPayloadHash,
 					ForceCacheBilling:  fs.ForceCacheBilling,
 					APIKeyService:      h.apiKeyService,
+					RequestPayload:     reqPayload,
+					ResponsePayload:    respPayload,
+					RequestTruncated:   reqTruncated,
+					ResponseTruncated:  respTruncated,
 				}); err != nil {
 					logger.L().With(
 						zap.String("component", "handler.gateway.messages"),
@@ -812,6 +828,18 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				result.ReasoningEffort = service.NormalizeClaudeOutputEffort(parsedReq.OutputEffort)
 			}
 
+			// 报文审计：捕获请求/响应报文
+			var reqPayload2, respPayload2 []byte
+			var reqTruncated2, respTruncated2 bool
+			if payloadCfg, _ := h.settingService.GetPayloadLoggingSettings(c.Request.Context()); payloadCfg != nil && payloadCfg.Enabled {
+				reqPayload2, reqTruncated2 = service.TruncateBytesWithFlag(body, payloadCfg.MaxRequestSize)
+				if result.ResponseBody != nil {
+					respPayload2, respTruncated2 = service.TruncateBytesWithFlag(result.ResponseBody, payloadCfg.MaxResponseSize)
+				} else if result.ResponseTruncated {
+					respTruncated2 = true
+				}
+			}
+
 			// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
 			h.submitUsageRecordTask(func(ctx context.Context) {
 				if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
@@ -827,6 +855,10 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					RequestPayloadHash: requestPayloadHash,
 					ForceCacheBilling:  fs.ForceCacheBilling,
 					APIKeyService:      h.apiKeyService,
+					RequestPayload:     reqPayload2,
+					ResponsePayload:    respPayload2,
+					RequestTruncated:   reqTruncated2,
+					ResponseTruncated:  respTruncated2,
 				}); err != nil {
 					logger.L().With(
 						zap.String("component", "handler.gateway.messages"),
