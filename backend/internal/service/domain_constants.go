@@ -213,6 +213,13 @@ const (
 	SettingKeyBetaPolicySettings = "beta_policy_settings"
 
 	// =========================
+	// Payload Logging Settings (报文审计记录)
+	// =========================
+
+	// SettingKeyPayloadLoggingSettings stores JSON config for payload audit logging.
+	SettingKeyPayloadLoggingSettings = "payload_logging_settings"
+
+	// =========================
 	// Sora S3 存储配置
 	// =========================
 
