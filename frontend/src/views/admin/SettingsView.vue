@@ -1276,6 +1276,89 @@
             </div>
           </div>
         </div>
+
+        <!-- Payload Logging Settings -->
+        <div class="card">
+          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+              {{ t('admin.settings.payloadLogging.title') }}
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {{ t('admin.settings.payloadLogging.description') }}
+            </p>
+          </div>
+          <div class="space-y-5 p-6">
+            <!-- Enable toggle -->
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.payloadLogging.enabled') }}
+                </label>
+              </div>
+              <Toggle v-model="payloadLoggingForm.enabled" />
+            </div>
+
+            <!-- Max request / response size -->
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.payloadLogging.maxRequestSize') }}
+                </label>
+                <input
+                  v-model.number="payloadLoggingForm.max_request_size"
+                  type="number"
+                  min="1024"
+                  max="524288"
+                  step="1024"
+                  class="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-200"
+                />
+                <p class="mt-1 text-xs text-gray-400">1024 ~ 524288 (1KB ~ 512KB)</p>
+              </div>
+              <div>
+                <label class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.payloadLogging.maxResponseSize') }}
+                </label>
+                <input
+                  v-model.number="payloadLoggingForm.max_response_size"
+                  type="number"
+                  min="1024"
+                  max="524288"
+                  step="1024"
+                  class="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-200"
+                />
+                <p class="mt-1 text-xs text-gray-400">1024 ~ 524288 (1KB ~ 512KB)</p>
+              </div>
+            </div>
+
+            <!-- Retention days -->
+            <div>
+              <label class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('admin.settings.payloadLogging.retentionDays') }}
+              </label>
+              <input
+                v-model.number="payloadLoggingForm.retention_days"
+                type="number"
+                min="0"
+                max="365"
+                class="block w-48 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-200"
+              />
+              <p class="mt-1 text-xs text-gray-400">
+                {{ t('admin.settings.payloadLogging.retentionDaysHint') }}
+              </p>
+            </div>
+
+            <!-- Save button -->
+            <div class="flex justify-end border-t border-gray-100 pt-4 dark:border-dark-700">
+              <button
+                class="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="payloadLoggingSaving"
+                @click="savePayloadLoggingSettings"
+              >
+                {{ t('common.save') }}
+              </button>
+            </div>
+          </div>
+        </div>
         </div><!-- /Tab: Gateway — Claude Code, Scheduling -->
 
         <!-- Tab: General -->
@@ -2081,7 +2164,7 @@ const rectifierForm = reactive({
   apikey_signature_patterns: [] as string[]
 })
 
-// Beta Policy 状态
+// Beta Policy 状態
 const betaPolicyLoading = ref(true)
 const betaPolicySaving = ref(false)
 const betaPolicyForm = reactive({
@@ -2091,6 +2174,16 @@ const betaPolicyForm = reactive({
     scope: 'all' | 'oauth' | 'apikey' | 'bedrock'
     error_message?: string
   }>
+})
+
+// Payload Logging 状态
+const payloadLoggingLoading = ref(true)
+const payloadLoggingSaving = ref(false)
+const payloadLoggingForm = reactive({
+  enabled: false,
+  max_request_size: 65536,
+  max_response_size: 65536,
+  retention_days: 7
 })
 
 interface DefaultSubscriptionGroupOption {
@@ -2783,6 +2876,33 @@ async function saveBetaPolicySettings() {
   }
 }
 
+async function loadPayloadLoggingSettings() {
+  payloadLoggingLoading.value = true
+  try {
+    const settings = await adminAPI.settings.getPayloadLoggingSettings()
+    Object.assign(payloadLoggingForm, settings)
+  } catch (error: any) {
+    console.error('Failed to load payload logging settings:', error)
+  } finally {
+    payloadLoggingLoading.value = false
+  }
+}
+
+async function savePayloadLoggingSettings() {
+  payloadLoggingSaving.value = true
+  try {
+    const updated = await adminAPI.settings.updatePayloadLoggingSettings({ ...payloadLoggingForm })
+    Object.assign(payloadLoggingForm, updated)
+    appStore.showSuccess(t('admin.settings.payloadLogging.saved'))
+  } catch (error: any) {
+    appStore.showError(
+      t('admin.settings.payloadLogging.saveFailed') + ': ' + (error.message || t('common.unknownError'))
+    )
+  } finally {
+    payloadLoggingSaving.value = false
+  }
+}
+
 onMounted(() => {
   loadSettings()
   loadSubscriptionGroups()
@@ -2791,6 +2911,7 @@ onMounted(() => {
   loadStreamTimeoutSettings()
   loadRectifierSettings()
   loadBetaPolicySettings()
+  loadPayloadLoggingSettings()
 })
 </script>
 

@@ -161,6 +161,15 @@
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
         </template>
 
+        <template #cell-actions="{ row }">
+          <button
+            class="text-xs font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+            @click="$emit('showDetail', row)"
+          >
+            {{ t('common.detail') }}
+          </button>
+        </template>
+
         <template #empty><EmptyState :message="t('usage.noRecords')" /></template>
       </DataTable>
     </div>
@@ -321,7 +330,7 @@ import Icon from '@/components/icons/Icon.vue'
 import type { AdminUsageLog } from '@/types'
 
 defineProps(['data', 'loading', 'columns'])
-defineEmits(['userClick'])
+defineEmits(['userClick', 'showDetail'])
 const { t } = useI18n()
 
 // Tooltip state - cost
