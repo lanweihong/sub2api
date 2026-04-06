@@ -208,6 +208,14 @@ type BetaPolicySettings struct {
 	Rules []BetaPolicyRule `json:"rules"`
 }
 
+// PayloadLoggingSettings 报文审计记录配置 DTO
+type PayloadLoggingSettings struct {
+	Enabled         bool  `json:"enabled"`
+	MaxRequestSize  int64 `json:"max_request_size"`
+	MaxResponseSize int64 `json:"max_response_size"`
+	RetentionDays   int   `json:"retention_days"`
+}
+
 // ParseCustomMenuItems parses a JSON string into a slice of CustomMenuItem.
 // Returns empty slice on empty/invalid input.
 func ParseCustomMenuItems(raw string) []CustomMenuItem {

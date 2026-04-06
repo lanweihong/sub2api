@@ -419,6 +419,9 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		// Beta 策略配置
 		adminSettings.GET("/beta-policy", h.Admin.Setting.GetBetaPolicySettings)
 		adminSettings.PUT("/beta-policy", h.Admin.Setting.UpdateBetaPolicySettings)
+		// 报文审计日志配置
+		adminSettings.GET("/payload-logging", h.Admin.Setting.GetPayloadLoggingSettings)
+		adminSettings.PUT("/payload-logging", h.Admin.Setting.UpdatePayloadLoggingSettings)
 		// Sora S3 存储配置
 		adminSettings.GET("/sora-s3", h.Admin.Setting.GetSoraS3Settings)
 		adminSettings.PUT("/sora-s3", h.Admin.Setting.UpdateSoraS3Settings)
@@ -519,6 +522,7 @@ func registerUsageRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		usage.GET("/cleanup-tasks", h.Admin.Usage.ListCleanupTasks)
 		usage.POST("/cleanup-tasks", h.Admin.Usage.CreateCleanupTask)
 		usage.POST("/cleanup-tasks/:id/cancel", h.Admin.Usage.CancelCleanupTask)
+		usage.GET("/:id/payload", h.Admin.Usage.GetPayload)
 	}
 }
 
