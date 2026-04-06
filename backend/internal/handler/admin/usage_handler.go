@@ -25,6 +25,7 @@ type UsageHandler struct {
 	apiKeyService  *service.APIKeyService
 	adminService   service.AdminService
 	cleanupService *service.UsageCleanupService
+	payloadRepo    service.UsageLogPayloadRepository
 }
 
 // NewUsageHandler creates a new admin usage handler
@@ -33,12 +34,14 @@ func NewUsageHandler(
 	apiKeyService *service.APIKeyService,
 	adminService service.AdminService,
 	cleanupService *service.UsageCleanupService,
+	payloadRepo service.UsageLogPayloadRepository,
 ) *UsageHandler {
 	return &UsageHandler{
 		usageService:   usageService,
 		apiKeyService:  apiKeyService,
 		adminService:   adminService,
 		cleanupService: cleanupService,
+		payloadRepo:    payloadRepo,
 	}
 }
 
@@ -582,4 +585,33 @@ func (h *UsageHandler) CancelCleanupTask(c *gin.Context) {
 	}
 	logger.LegacyPrintf("handler.admin.usage", "[UsageCleanup] 清理任务已取消: task=%d operator=%d", taskID, subject.UserID)
 	response.Success(c, gin.H{"id": taskID, "status": service.UsageCleanupStatusCanceled})
+}
+
+// GetPayload returns the request/response payload for a specific usage log entry
+func (h *UsageHandler) GetPayload(c *gin.Context) {
+	idStr := strings.TrimSpace(c.Param("id"))
+	usageLogID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || usageLogID <= 0 {
+		response.BadRequest(c, "Invalid usage log id")
+		return
+	}
+
+	record, err := h.payloadRepo.GetByUsageLogID(c.Request.Context(), usageLogID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if record == nil {
+		response.NotFound(c, "Payload not found")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"usage_log_id":       record.UsageLogID,
+		"request_body":       record.RequestBody,
+		"response_body":      record.ResponseBody,
+		"request_truncated":  record.RequestTruncated,
+		"response_truncated": record.ResponseTruncated,
+		"created_at":         record.CreatedAt,
+	})
 }
