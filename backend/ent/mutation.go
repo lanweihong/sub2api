@@ -30,6 +30,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
+	"github.com/Wei-Shaw/sub2api/ent/usagelogpayload"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
@@ -64,6 +65,7 @@ const (
 	TypeTLSFingerprintProfile   = "TLSFingerprintProfile"
 	TypeUsageCleanupTask        = "UsageCleanupTask"
 	TypeUsageLog                = "UsageLog"
+	TypeUsageLogPayload         = "UsageLogPayload"
 	TypeUser                    = "User"
 	TypeUserAllowedGroup        = "UserAllowedGroup"
 	TypeUserAttributeDefinition = "UserAttributeDefinition"
@@ -22871,6 +22873,679 @@ func (m *UsageLogMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown UsageLog edge %s", name)
+}
+
+// UsageLogPayloadMutation represents an operation that mutates the UsageLogPayload nodes in the graph.
+type UsageLogPayloadMutation struct {
+	config
+	op                 Op
+	typ                string
+	id                 *int64
+	usage_log_id       *int64
+	addusage_log_id    *int64
+	request_body       *string
+	response_body      *string
+	request_truncated  *bool
+	response_truncated *bool
+	created_at         *time.Time
+	clearedFields      map[string]struct{}
+	done               bool
+	oldValue           func(context.Context) (*UsageLogPayload, error)
+	predicates         []predicate.UsageLogPayload
+}
+
+var _ ent.Mutation = (*UsageLogPayloadMutation)(nil)
+
+// usagelogpayloadOption allows management of the mutation configuration using functional options.
+type usagelogpayloadOption func(*UsageLogPayloadMutation)
+
+// newUsageLogPayloadMutation creates new mutation for the UsageLogPayload entity.
+func newUsageLogPayloadMutation(c config, op Op, opts ...usagelogpayloadOption) *UsageLogPayloadMutation {
+	m := &UsageLogPayloadMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeUsageLogPayload,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withUsageLogPayloadID sets the ID field of the mutation.
+func withUsageLogPayloadID(id int64) usagelogpayloadOption {
+	return func(m *UsageLogPayloadMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *UsageLogPayload
+		)
+		m.oldValue = func(ctx context.Context) (*UsageLogPayload, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().UsageLogPayload.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withUsageLogPayload sets the old UsageLogPayload of the mutation.
+func withUsageLogPayload(node *UsageLogPayload) usagelogpayloadOption {
+	return func(m *UsageLogPayloadMutation) {
+		m.oldValue = func(context.Context) (*UsageLogPayload, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m UsageLogPayloadMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m UsageLogPayloadMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *UsageLogPayloadMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *UsageLogPayloadMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().UsageLogPayload.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetUsageLogID sets the "usage_log_id" field.
+func (m *UsageLogPayloadMutation) SetUsageLogID(i int64) {
+	m.usage_log_id = &i
+	m.addusage_log_id = nil
+}
+
+// UsageLogID returns the value of the "usage_log_id" field in the mutation.
+func (m *UsageLogPayloadMutation) UsageLogID() (r int64, exists bool) {
+	v := m.usage_log_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageLogID returns the old "usage_log_id" field's value of the UsageLogPayload entity.
+// If the UsageLogPayload object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogPayloadMutation) OldUsageLogID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageLogID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageLogID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageLogID: %w", err)
+	}
+	return oldValue.UsageLogID, nil
+}
+
+// AddUsageLogID adds i to the "usage_log_id" field.
+func (m *UsageLogPayloadMutation) AddUsageLogID(i int64) {
+	if m.addusage_log_id != nil {
+		*m.addusage_log_id += i
+	} else {
+		m.addusage_log_id = &i
+	}
+}
+
+// AddedUsageLogID returns the value that was added to the "usage_log_id" field in this mutation.
+func (m *UsageLogPayloadMutation) AddedUsageLogID() (r int64, exists bool) {
+	v := m.addusage_log_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUsageLogID resets all changes to the "usage_log_id" field.
+func (m *UsageLogPayloadMutation) ResetUsageLogID() {
+	m.usage_log_id = nil
+	m.addusage_log_id = nil
+}
+
+// SetRequestBody sets the "request_body" field.
+func (m *UsageLogPayloadMutation) SetRequestBody(s string) {
+	m.request_body = &s
+}
+
+// RequestBody returns the value of the "request_body" field in the mutation.
+func (m *UsageLogPayloadMutation) RequestBody() (r string, exists bool) {
+	v := m.request_body
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestBody returns the old "request_body" field's value of the UsageLogPayload entity.
+// If the UsageLogPayload object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogPayloadMutation) OldRequestBody(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestBody is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestBody requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestBody: %w", err)
+	}
+	return oldValue.RequestBody, nil
+}
+
+// ClearRequestBody clears the value of the "request_body" field.
+func (m *UsageLogPayloadMutation) ClearRequestBody() {
+	m.request_body = nil
+	m.clearedFields[usagelogpayload.FieldRequestBody] = struct{}{}
+}
+
+// RequestBodyCleared returns if the "request_body" field was cleared in this mutation.
+func (m *UsageLogPayloadMutation) RequestBodyCleared() bool {
+	_, ok := m.clearedFields[usagelogpayload.FieldRequestBody]
+	return ok
+}
+
+// ResetRequestBody resets all changes to the "request_body" field.
+func (m *UsageLogPayloadMutation) ResetRequestBody() {
+	m.request_body = nil
+	delete(m.clearedFields, usagelogpayload.FieldRequestBody)
+}
+
+// SetResponseBody sets the "response_body" field.
+func (m *UsageLogPayloadMutation) SetResponseBody(s string) {
+	m.response_body = &s
+}
+
+// ResponseBody returns the value of the "response_body" field in the mutation.
+func (m *UsageLogPayloadMutation) ResponseBody() (r string, exists bool) {
+	v := m.response_body
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResponseBody returns the old "response_body" field's value of the UsageLogPayload entity.
+// If the UsageLogPayload object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogPayloadMutation) OldResponseBody(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResponseBody is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResponseBody requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResponseBody: %w", err)
+	}
+	return oldValue.ResponseBody, nil
+}
+
+// ClearResponseBody clears the value of the "response_body" field.
+func (m *UsageLogPayloadMutation) ClearResponseBody() {
+	m.response_body = nil
+	m.clearedFields[usagelogpayload.FieldResponseBody] = struct{}{}
+}
+
+// ResponseBodyCleared returns if the "response_body" field was cleared in this mutation.
+func (m *UsageLogPayloadMutation) ResponseBodyCleared() bool {
+	_, ok := m.clearedFields[usagelogpayload.FieldResponseBody]
+	return ok
+}
+
+// ResetResponseBody resets all changes to the "response_body" field.
+func (m *UsageLogPayloadMutation) ResetResponseBody() {
+	m.response_body = nil
+	delete(m.clearedFields, usagelogpayload.FieldResponseBody)
+}
+
+// SetRequestTruncated sets the "request_truncated" field.
+func (m *UsageLogPayloadMutation) SetRequestTruncated(b bool) {
+	m.request_truncated = &b
+}
+
+// RequestTruncated returns the value of the "request_truncated" field in the mutation.
+func (m *UsageLogPayloadMutation) RequestTruncated() (r bool, exists bool) {
+	v := m.request_truncated
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestTruncated returns the old "request_truncated" field's value of the UsageLogPayload entity.
+// If the UsageLogPayload object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogPayloadMutation) OldRequestTruncated(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestTruncated is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestTruncated requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestTruncated: %w", err)
+	}
+	return oldValue.RequestTruncated, nil
+}
+
+// ResetRequestTruncated resets all changes to the "request_truncated" field.
+func (m *UsageLogPayloadMutation) ResetRequestTruncated() {
+	m.request_truncated = nil
+}
+
+// SetResponseTruncated sets the "response_truncated" field.
+func (m *UsageLogPayloadMutation) SetResponseTruncated(b bool) {
+	m.response_truncated = &b
+}
+
+// ResponseTruncated returns the value of the "response_truncated" field in the mutation.
+func (m *UsageLogPayloadMutation) ResponseTruncated() (r bool, exists bool) {
+	v := m.response_truncated
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldResponseTruncated returns the old "response_truncated" field's value of the UsageLogPayload entity.
+// If the UsageLogPayload object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogPayloadMutation) OldResponseTruncated(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldResponseTruncated is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldResponseTruncated requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldResponseTruncated: %w", err)
+	}
+	return oldValue.ResponseTruncated, nil
+}
+
+// ResetResponseTruncated resets all changes to the "response_truncated" field.
+func (m *UsageLogPayloadMutation) ResetResponseTruncated() {
+	m.response_truncated = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *UsageLogPayloadMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *UsageLogPayloadMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the UsageLogPayload entity.
+// If the UsageLogPayload object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogPayloadMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *UsageLogPayloadMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// Where appends a list predicates to the UsageLogPayloadMutation builder.
+func (m *UsageLogPayloadMutation) Where(ps ...predicate.UsageLogPayload) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the UsageLogPayloadMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *UsageLogPayloadMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.UsageLogPayload, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *UsageLogPayloadMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *UsageLogPayloadMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (UsageLogPayload).
+func (m *UsageLogPayloadMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *UsageLogPayloadMutation) Fields() []string {
+	fields := make([]string, 0, 6)
+	if m.usage_log_id != nil {
+		fields = append(fields, usagelogpayload.FieldUsageLogID)
+	}
+	if m.request_body != nil {
+		fields = append(fields, usagelogpayload.FieldRequestBody)
+	}
+	if m.response_body != nil {
+		fields = append(fields, usagelogpayload.FieldResponseBody)
+	}
+	if m.request_truncated != nil {
+		fields = append(fields, usagelogpayload.FieldRequestTruncated)
+	}
+	if m.response_truncated != nil {
+		fields = append(fields, usagelogpayload.FieldResponseTruncated)
+	}
+	if m.created_at != nil {
+		fields = append(fields, usagelogpayload.FieldCreatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *UsageLogPayloadMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case usagelogpayload.FieldUsageLogID:
+		return m.UsageLogID()
+	case usagelogpayload.FieldRequestBody:
+		return m.RequestBody()
+	case usagelogpayload.FieldResponseBody:
+		return m.ResponseBody()
+	case usagelogpayload.FieldRequestTruncated:
+		return m.RequestTruncated()
+	case usagelogpayload.FieldResponseTruncated:
+		return m.ResponseTruncated()
+	case usagelogpayload.FieldCreatedAt:
+		return m.CreatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *UsageLogPayloadMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case usagelogpayload.FieldUsageLogID:
+		return m.OldUsageLogID(ctx)
+	case usagelogpayload.FieldRequestBody:
+		return m.OldRequestBody(ctx)
+	case usagelogpayload.FieldResponseBody:
+		return m.OldResponseBody(ctx)
+	case usagelogpayload.FieldRequestTruncated:
+		return m.OldRequestTruncated(ctx)
+	case usagelogpayload.FieldResponseTruncated:
+		return m.OldResponseTruncated(ctx)
+	case usagelogpayload.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown UsageLogPayload field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *UsageLogPayloadMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case usagelogpayload.FieldUsageLogID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageLogID(v)
+		return nil
+	case usagelogpayload.FieldRequestBody:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestBody(v)
+		return nil
+	case usagelogpayload.FieldResponseBody:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResponseBody(v)
+		return nil
+	case usagelogpayload.FieldRequestTruncated:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestTruncated(v)
+		return nil
+	case usagelogpayload.FieldResponseTruncated:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetResponseTruncated(v)
+		return nil
+	case usagelogpayload.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown UsageLogPayload field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *UsageLogPayloadMutation) AddedFields() []string {
+	var fields []string
+	if m.addusage_log_id != nil {
+		fields = append(fields, usagelogpayload.FieldUsageLogID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *UsageLogPayloadMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case usagelogpayload.FieldUsageLogID:
+		return m.AddedUsageLogID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *UsageLogPayloadMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case usagelogpayload.FieldUsageLogID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUsageLogID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown UsageLogPayload numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *UsageLogPayloadMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(usagelogpayload.FieldRequestBody) {
+		fields = append(fields, usagelogpayload.FieldRequestBody)
+	}
+	if m.FieldCleared(usagelogpayload.FieldResponseBody) {
+		fields = append(fields, usagelogpayload.FieldResponseBody)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *UsageLogPayloadMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *UsageLogPayloadMutation) ClearField(name string) error {
+	switch name {
+	case usagelogpayload.FieldRequestBody:
+		m.ClearRequestBody()
+		return nil
+	case usagelogpayload.FieldResponseBody:
+		m.ClearResponseBody()
+		return nil
+	}
+	return fmt.Errorf("unknown UsageLogPayload nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *UsageLogPayloadMutation) ResetField(name string) error {
+	switch name {
+	case usagelogpayload.FieldUsageLogID:
+		m.ResetUsageLogID()
+		return nil
+	case usagelogpayload.FieldRequestBody:
+		m.ResetRequestBody()
+		return nil
+	case usagelogpayload.FieldResponseBody:
+		m.ResetResponseBody()
+		return nil
+	case usagelogpayload.FieldRequestTruncated:
+		m.ResetRequestTruncated()
+		return nil
+	case usagelogpayload.FieldResponseTruncated:
+		m.ResetResponseTruncated()
+		return nil
+	case usagelogpayload.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown UsageLogPayload field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *UsageLogPayloadMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *UsageLogPayloadMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *UsageLogPayloadMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *UsageLogPayloadMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *UsageLogPayloadMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *UsageLogPayloadMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *UsageLogPayloadMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown UsageLogPayload unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *UsageLogPayloadMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown UsageLogPayload edge %s", name)
 }
 
 // UserMutation represents an operation that mutates the User nodes in the graph.

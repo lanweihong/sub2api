@@ -875,6 +875,34 @@ var (
 			},
 		},
 	}
+	// UsageLogPayloadsColumns holds the columns for the "usage_log_payloads" table.
+	UsageLogPayloadsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "usage_log_id", Type: field.TypeInt64},
+		{Name: "request_body", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "response_body", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "request_truncated", Type: field.TypeBool, Default: false},
+		{Name: "response_truncated", Type: field.TypeBool, Default: false},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+	}
+	// UsageLogPayloadsTable holds the schema information for the "usage_log_payloads" table.
+	UsageLogPayloadsTable = &schema.Table{
+		Name:       "usage_log_payloads",
+		Columns:    UsageLogPayloadsColumns,
+		PrimaryKey: []*schema.Column{UsageLogPayloadsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "usagelogpayload_usage_log_id",
+				Unique:  true,
+				Columns: []*schema.Column{UsageLogPayloadsColumns[1]},
+			},
+			{
+				Name:    "usagelogpayload_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{UsageLogPayloadsColumns[6]},
+			},
+		},
+	}
 	// UsersColumns holds the columns for the "users" table.
 	UsersColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -1140,6 +1168,7 @@ var (
 		TLSFingerprintProfilesTable,
 		UsageCleanupTasksTable,
 		UsageLogsTable,
+		UsageLogPayloadsTable,
 		UsersTable,
 		UserAllowedGroupsTable,
 		UserAttributeDefinitionsTable,
@@ -1215,6 +1244,9 @@ func init() {
 	UsageLogsTable.ForeignKeys[4].RefTable = UserSubscriptionsTable
 	UsageLogsTable.Annotation = &entsql.Annotation{
 		Table: "usage_logs",
+	}
+	UsageLogPayloadsTable.Annotation = &entsql.Annotation{
+		Table: "usage_log_payloads",
 	}
 	UsersTable.Annotation = &entsql.Annotation{
 		Table: "users",

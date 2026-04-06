@@ -213,6 +213,18 @@ func (f UsageLogFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, er
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UsageLogMutation", m)
 }
 
+// The UsageLogPayloadFunc type is an adapter to allow the use of ordinary
+// function as UsageLogPayload mutator.
+type UsageLogPayloadFunc func(context.Context, *ent.UsageLogPayloadMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f UsageLogPayloadFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.UsageLogPayloadMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UsageLogPayloadMutation", m)
+}
+
 // The UserFunc type is an adapter to allow the use of ordinary
 // function as User mutator.
 type UserFunc func(context.Context, *ent.UserMutation) (ent.Value, error)

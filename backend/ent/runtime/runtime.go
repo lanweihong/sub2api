@@ -23,6 +23,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
+	"github.com/Wei-Shaw/sub2api/ent/usagelogpayload"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
@@ -963,6 +964,20 @@ func init() {
 	usagelogDescCreatedAt := usagelogFields[33].Descriptor()
 	// usagelog.DefaultCreatedAt holds the default value on creation for the created_at field.
 	usagelog.DefaultCreatedAt = usagelogDescCreatedAt.Default.(func() time.Time)
+	usagelogpayloadFields := schema.UsageLogPayload{}.Fields()
+	_ = usagelogpayloadFields
+	// usagelogpayloadDescRequestTruncated is the schema descriptor for request_truncated field.
+	usagelogpayloadDescRequestTruncated := usagelogpayloadFields[3].Descriptor()
+	// usagelogpayload.DefaultRequestTruncated holds the default value on creation for the request_truncated field.
+	usagelogpayload.DefaultRequestTruncated = usagelogpayloadDescRequestTruncated.Default.(bool)
+	// usagelogpayloadDescResponseTruncated is the schema descriptor for response_truncated field.
+	usagelogpayloadDescResponseTruncated := usagelogpayloadFields[4].Descriptor()
+	// usagelogpayload.DefaultResponseTruncated holds the default value on creation for the response_truncated field.
+	usagelogpayload.DefaultResponseTruncated = usagelogpayloadDescResponseTruncated.Default.(bool)
+	// usagelogpayloadDescCreatedAt is the schema descriptor for created_at field.
+	usagelogpayloadDescCreatedAt := usagelogpayloadFields[5].Descriptor()
+	// usagelogpayload.DefaultCreatedAt holds the default value on creation for the created_at field.
+	usagelogpayload.DefaultCreatedAt = usagelogpayloadDescCreatedAt.Default.(func() time.Time)
 	userMixin := schema.User{}.Mixin()
 	userMixinHooks1 := userMixin[1].Hooks()
 	user.Hooks[0] = userMixinHooks1[0]
