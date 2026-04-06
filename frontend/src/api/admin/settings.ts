@@ -351,6 +351,42 @@ export async function updateRectifierSettings(
   return data
 }
 
+// ==================== Payload Logging Settings ====================
+
+/**
+ * Payload logging settings interface
+ */
+export interface PayloadLoggingSettings {
+  enabled: boolean
+  max_request_size: number
+  max_response_size: number
+  retention_days: number
+}
+
+/**
+ * Get payload logging settings
+ * @returns Payload logging settings
+ */
+export async function getPayloadLoggingSettings(): Promise<PayloadLoggingSettings> {
+  const { data } = await apiClient.get<PayloadLoggingSettings>('/admin/settings/payload-logging')
+  return data
+}
+
+/**
+ * Update payload logging settings
+ * @param settings - Payload logging settings to update
+ * @returns Updated settings
+ */
+export async function updatePayloadLoggingSettings(
+  settings: PayloadLoggingSettings
+): Promise<PayloadLoggingSettings> {
+  const { data } = await apiClient.put<PayloadLoggingSettings>(
+    '/admin/settings/payload-logging',
+    settings
+  )
+  return data
+}
+
 // ==================== Beta Policy Settings ====================
 
 /**
@@ -544,6 +580,8 @@ export const settingsAPI = {
   updateStreamTimeoutSettings,
   getRectifierSettings,
   updateRectifierSettings,
+  getPayloadLoggingSettings,
+  updatePayloadLoggingSettings,
   getBetaPolicySettings,
   updateBetaPolicySettings,
   getSoraS3Settings,

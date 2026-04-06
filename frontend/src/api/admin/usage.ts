@@ -82,6 +82,18 @@ export interface AdminUsageQueryParams extends UsageQueryParams {
   exact_total?: boolean
 }
 
+/**
+ * Usage log payload response
+ */
+export interface UsageLogPayload {
+  usage_log_id: number
+  request_body: string | null
+  response_body: string | null
+  request_truncated: boolean
+  response_truncated: boolean
+  created_at: string
+}
+
 // ==================== API Functions ====================
 
 /**
@@ -193,6 +205,26 @@ export async function cancelCleanupTask(taskId: number): Promise<{ id: number; s
   return data
 }
 
+/**
+ * Get payload data for a specific usage log (admin only)
+ * @param usageLogId - Usage log ID to get payload for
+ * @returns Payload data or null
+ */
+export async function getPayload(usageLogId: number): Promise<UsageLogPayload | null> {
+  try {
+    const { data } = await apiClient.get<UsageLogPayload>(`/admin/usage/${usageLogId}/payload`)
+    return data
+  } catch (err: unknown) {
+    if (err && typeof err === 'object' && 'response' in err) {
+      const resp = (err as { response?: { status?: number } }).response
+      if (resp?.status === 404) {
+        return null
+      }
+    }
+    throw err
+  }
+}
+
 export const adminUsageAPI = {
   list,
   getStats,
@@ -200,7 +232,8 @@ export const adminUsageAPI = {
   searchApiKeys,
   listCleanupTasks,
   createCleanupTask,
-  cancelCleanupTask
+  cancelCleanupTask,
+  getPayload
 }
 
 export default adminUsageAPI
