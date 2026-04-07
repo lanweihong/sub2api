@@ -5,24 +5,24 @@
         <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 class="text-base font-semibold text-gray-900 dark:text-white">
-              {{ t('admin.backup.s3.title') }}
+              {{ t('admin.backup.storage.title') }}
             </h3>
             <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              {{ t('admin.backup.s3.descriptionPrefix') }}
-              <button type="button" class="text-primary-600 underline hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300" @click="showR2Guide = true">Cloudflare R2</button>
-              {{ t('admin.backup.s3.descriptionSuffix') }}
+              {{ t('admin.backup.storage.description') }}
+              <button v-if="s3Form.provider === 's3'" type="button" class="text-primary-600 underline hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300" @click="showR2Guide = true">Cloudflare R2</button>
             </p>
           </div>
         </div>
         <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div>
-            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.endpoint') }}</label>
-            <input v-model="s3Form.endpoint" class="input w-full" placeholder="https://<account_id>.r2.cloudflarestorage.com" />
+          <!-- Storage Provider -->
+          <div class="md:col-span-2">
+            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.storage.provider') }}</label>
+            <select v-model="s3Form.provider" class="input w-full md:w-1/2">
+              <option v-for="p in storageProviders" :key="p.value" :value="p.value">{{ p.label }}</option>
+            </select>
           </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.region') }}</label>
-            <input v-model="s3Form.region" class="input w-full" placeholder="auto" />
-          </div>
+
+          <!-- Common fields -->
           <div>
             <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.bucket') }}</label>
             <input v-model="s3Form.bucket" class="input w-full" />
@@ -39,10 +39,54 @@
             <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.secretAccessKey') }}</label>
             <input v-model="s3Form.secret_access_key" type="password" class="input w-full" :placeholder="s3SecretConfigured ? t('admin.backup.s3.secretConfigured') : ''" />
           </div>
-          <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
-            <input v-model="s3Form.force_path_style" type="checkbox" />
-            <span>{{ t('admin.backup.s3.forcePathStyle') }}</span>
-          </label>
+
+          <!-- S3 specific fields -->
+          <template v-if="s3Form.provider === 's3'">
+            <div>
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.endpoint') }}</label>
+              <input v-model="s3Form.endpoint" class="input w-full" placeholder="https://<account_id>.r2.cloudflarestorage.com" />
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.region') }}</label>
+              <input v-model="s3Form.region" class="input w-full" placeholder="auto" />
+            </div>
+            <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
+              <input v-model="s3Form.force_path_style" type="checkbox" />
+              <span>{{ t('admin.backup.s3.forcePathStyle') }}</span>
+            </label>
+          </template>
+
+          <!-- OSS specific fields -->
+          <template v-if="s3Form.provider === 'oss'">
+            <div>
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.oss.endpoint') }}</label>
+              <input v-model="s3Form.oss_endpoint" class="input w-full" placeholder="oss-cn-hangzhou.aliyuncs.com" />
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.oss.region') }}</label>
+              <input v-model="s3Form.oss_region" class="input w-full" placeholder="cn-hangzhou" />
+            </div>
+          </template>
+
+          <!-- Qiniu specific fields -->
+          <template v-if="s3Form.provider === 'qiniu'">
+            <div>
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.qiniu.region') }}</label>
+              <select v-model="s3Form.qiniu_region" class="input w-full">
+                <option value="z0">{{ t('admin.backup.qiniu.regions.z0') }}</option>
+                <option value="z1">{{ t('admin.backup.qiniu.regions.z1') }}</option>
+                <option value="z2">{{ t('admin.backup.qiniu.regions.z2') }}</option>
+                <option value="cn-east-2">{{ t('admin.backup.qiniu.regions.cnEast2') }}</option>
+                <option value="na0">{{ t('admin.backup.qiniu.regions.na0') }}</option>
+                <option value="as0">{{ t('admin.backup.qiniu.regions.as0') }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.qiniu.domain') }}</label>
+              <input v-model="s3Form.qiniu_domain" class="input w-full" placeholder="https://cdn.example.com" />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.backup.qiniu.domainHint') }}</p>
+            </div>
+          </template>
         </div>
         <div class="mt-4 flex flex-wrap gap-2">
           <button type="button" class="btn btn-secondary btn-sm" :disabled="testingS3" @click="testS3">
@@ -283,20 +327,32 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api'
 import { useAppStore } from '@/stores'
-import type { BackupS3Config, BackupScheduleConfig, BackupRecord } from '@/api/admin/backup'
+import type { BackupStorageConfig, BackupStorageProvider, BackupScheduleConfig, BackupRecord } from '@/api/admin/backup'
 
 const { t } = useI18n()
 const appStore = useAppStore()
 
+// Storage provider options
+const storageProviders: { value: BackupStorageProvider; label: string }[] = [
+  { value: 's3', label: 'S3 / R2' },
+  { value: 'oss', label: t('admin.backup.storage.oss') },
+  { value: 'qiniu', label: t('admin.backup.storage.qiniu') },
+]
+
 // S3 config
-const s3Form = ref<BackupS3Config>({
-  endpoint: '',
-  region: 'auto',
+const s3Form = ref<BackupStorageConfig>({
+  provider: 's3',
   bucket: '',
+  prefix: 'backups/',
   access_key_id: '',
   secret_access_key: '',
-  prefix: 'backups/',
+  endpoint: '',
+  region: 'auto',
   force_path_style: false,
+  oss_endpoint: '',
+  oss_region: '',
+  qiniu_region: 'z0',
+  qiniu_domain: '',
 })
 const s3SecretConfigured = ref(false)
 const savingS3 = ref(false)
@@ -439,13 +495,18 @@ async function loadS3Config() {
   try {
     const cfg = await adminAPI.backup.getS3Config()
     s3Form.value = {
-      endpoint: cfg.endpoint || '',
-      region: cfg.region || 'auto',
+      provider: cfg.provider || 's3',
       bucket: cfg.bucket || '',
+      prefix: cfg.prefix || 'backups/',
       access_key_id: cfg.access_key_id || '',
       secret_access_key: '',
-      prefix: cfg.prefix || 'backups/',
+      endpoint: cfg.endpoint || '',
+      region: cfg.region || 'auto',
       force_path_style: cfg.force_path_style,
+      oss_endpoint: cfg.oss_endpoint || '',
+      oss_region: cfg.oss_region || '',
+      qiniu_region: cfg.qiniu_region || 'z0',
+      qiniu_domain: cfg.qiniu_domain || '',
     }
     s3SecretConfigured.value = Boolean(cfg.access_key_id)
   } catch (error) {

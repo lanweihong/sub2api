@@ -1001,7 +1001,14 @@ export default {
 
     backup: {
       title: 'Database Backup',
-      description: 'Full database backup to S3-compatible storage with scheduled backup and restore',
+      description: 'Full database backup to object storage with scheduled backup and restore',
+      storage: {
+        title: 'Storage Configuration',
+        description: 'Configure object storage service — supports S3-compatible, Alibaba Cloud OSS, Qiniu Kodo',
+        provider: 'Storage Provider',
+        oss: 'Alibaba Cloud OSS',
+        qiniu: 'Qiniu Kodo',
+      },
       s3: {
         title: 'S3 Storage Configuration',
         description: 'Configure S3-compatible storage (supports Cloudflare R2)',
@@ -1017,9 +1024,26 @@ export default {
         secretConfigured: 'Already configured, leave empty to keep',
         forcePathStyle: 'Force Path Style',
         testConnection: 'Test Connection',
-        testSuccess: 'S3 connection test successful',
-        testFailed: 'S3 connection test failed',
-        saved: 'S3 configuration saved'
+        testSuccess: 'Connection test successful',
+        testFailed: 'Connection test failed',
+        saved: 'Storage configuration saved'
+      },
+      oss: {
+        endpoint: 'OSS Endpoint',
+        region: 'OSS Region',
+      },
+      qiniu: {
+        region: 'Storage Region',
+        domain: 'Access Domain',
+        domainHint: 'Custom domain or Qiniu test domain bound to the bucket',
+        regions: {
+          z0: 'East China',
+          z1: 'North China',
+          z2: 'South China',
+          cnEast2: 'East China - Zhejiang 2',
+          na0: 'North America',
+          as0: 'Southeast Asia',
+        },
       },
       schedule: {
         title: 'Scheduled Backup',

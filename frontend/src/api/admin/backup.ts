@@ -1,14 +1,28 @@
 import { apiClient } from '../client'
 
-export interface BackupS3Config {
-  endpoint: string
-  region: string
+export type BackupStorageProvider = 's3' | 'oss' | 'qiniu'
+
+export interface BackupStorageConfig {
+  provider: BackupStorageProvider
+  // 公共字段
   bucket: string
+  prefix: string
   access_key_id: string
   secret_access_key?: string
-  prefix: string
+  // S3 专用
+  endpoint: string
+  region: string
   force_path_style: boolean
+  // 阿里云 OSS 专用
+  oss_endpoint: string
+  oss_region: string
+  // 七牛云专用
+  qiniu_region: string
+  qiniu_domain: string
 }
+
+/** @deprecated Use BackupStorageConfig instead */
+export type BackupS3Config = BackupStorageConfig
 
 export interface BackupScheduleConfig {
   enabled: boolean
@@ -33,6 +47,8 @@ export interface BackupRecord {
   restore_status?: string
   restore_error?: string
   restored_at?: string
+  storage_provider?: BackupStorageProvider
+  storage_bucket?: string
 }
 
 export interface CreateBackupRequest {

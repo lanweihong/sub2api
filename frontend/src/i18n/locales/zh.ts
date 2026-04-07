@@ -1023,7 +1023,14 @@ export default {
 
     backup: {
       title: '数据库备份',
-      description: '全量数据库备份到 S3 兼容存储，支持定时备份与恢复',
+      description: '全量数据库备份到对象存储，支持定时备份与恢复',
+      storage: {
+        title: '存储配置',
+        description: '配置对象存储服务，支持 S3 兼容存储、阿里云 OSS、七牛云 Kodo',
+        provider: '存储类型',
+        oss: '阿里云 OSS',
+        qiniu: '七牛云 Kodo',
+      },
       s3: {
         title: 'S3 存储配置',
         description: '配置 S3 兼容存储（支持 Cloudflare R2）',
@@ -1039,9 +1046,26 @@ export default {
         secretConfigured: '已配置，留空保持不变',
         forcePathStyle: '强制路径风格',
         testConnection: '测试连接',
-        testSuccess: 'S3 连接测试成功',
-        testFailed: 'S3 连接测试失败',
-        saved: 'S3 配置已保存'
+        testSuccess: '连接测试成功',
+        testFailed: '连接测试失败',
+        saved: '存储配置已保存'
+      },
+      oss: {
+        endpoint: 'OSS 端点',
+        region: 'OSS 区域',
+      },
+      qiniu: {
+        region: '存储区域',
+        domain: '访问域名',
+        domainHint: '绑定的自定义域名或七牛提供的测试域名',
+        regions: {
+          z0: '华东',
+          z1: '华北',
+          z2: '华南',
+          cnEast2: '华东-浙江2',
+          na0: '北美',
+          as0: '东南亚',
+        },
       },
       schedule: {
         title: '定时备份',
