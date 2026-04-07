@@ -2229,6 +2229,16 @@ func DefaultPayloadLoggingSettings() *PayloadLoggingSettings {
 func (s *SettingService) GetPayloadLoggingSettings(ctx context.Context) (*PayloadLoggingSettings, error) {
 	if cached, ok := payloadLoggingCache.Load().(*cachedPayloadLoggingSettings); ok && cached != nil {
 		if time.Now().UnixNano() < cached.expiresAt {
+			if cached.settings != nil {
+				slog.Debug("payload logging settings resolved",
+					"source", "cache",
+					"enabled", cached.settings.Enabled,
+					"max_request_size", cached.settings.MaxRequestSize,
+					"max_response_size", cached.settings.MaxResponseSize,
+					"retention_days", cached.settings.RetentionDays,
+					"expires_at_unix_nano", cached.expiresAt,
+				)
+			}
 			return cached.settings, nil
 		}
 	}
@@ -2259,6 +2269,14 @@ func (s *SettingService) GetPayloadLoggingSettings(ctx context.Context) (*Payloa
 			settings:  settings,
 			expiresAt: time.Now().Add(payloadLoggingCacheTTL).UnixNano(),
 		})
+		slog.Info("payload logging settings resolved",
+			"source", "db",
+			"enabled", settings.Enabled,
+			"max_request_size", settings.MaxRequestSize,
+			"max_response_size", settings.MaxResponseSize,
+			"retention_days", settings.RetentionDays,
+			"cache_ttl_seconds", payloadLoggingCacheTTL.Seconds(),
+		)
 		return settings, nil
 	})
 
@@ -2339,6 +2357,14 @@ func (s *SettingService) SetPayloadLoggingSettings(ctx context.Context, settings
 		settings:  settings,
 		expiresAt: time.Now().Add(payloadLoggingCacheTTL).UnixNano(),
 	})
+	slog.Info("payload logging settings updated",
+		"enabled", settings.Enabled,
+		"max_request_size", settings.MaxRequestSize,
+		"max_response_size", settings.MaxResponseSize,
+		"retention_days", settings.RetentionDays,
+		"cache_scope", "local_process_only",
+		"cache_ttl_seconds", payloadLoggingCacheTTL.Seconds(),
+	)
 	return nil
 }
 
