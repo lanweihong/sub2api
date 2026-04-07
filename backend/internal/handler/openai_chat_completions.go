@@ -254,17 +254,27 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 
 		userAgent := c.GetHeader("User-Agent")
 		clientIP := ip.GetClientIP(c)
+		requestPayloadHash := service.HashUsageRequestPayload(body)
 
 		// 报文审计：捕获请求/响应 payload
 		var reqPayload, respPayload []byte
 		var reqTruncated, respTruncated bool
-		if plCfg, _ := h.settingService.GetPayloadLoggingSettings(c.Request.Context()); plCfg != nil && plCfg.Enabled {
-			reqPayload, reqTruncated = service.TruncateBytesWithFlag(body, plCfg.MaxRequestSize)
-			respPayload = result.ResponseBody
-			respTruncated = result.ResponseTruncated
+		payloadLoggingEnabled := false
+		var payloadMaxRequestSize, payloadMaxResponseSize int64
+		if plCfg, _ := h.settingService.GetPayloadLoggingSettings(c.Request.Context()); plCfg != nil {
+			payloadLoggingEnabled = plCfg.Enabled
+			payloadMaxRequestSize = plCfg.MaxRequestSize
+			payloadMaxResponseSize = plCfg.MaxResponseSize
+			if plCfg.Enabled {
+				reqPayload, reqTruncated = service.TruncateBytesWithFlag(body, plCfg.MaxRequestSize)
+				respPayload = result.ResponseBody
+				respTruncated = result.ResponseTruncated
+			}
 		}
+		logPayloadAuditCaptureDecision(reqLog, c.Request.Context(), "openai.chat_completions", requestPayloadHash, payloadLoggingEnabled, payloadMaxRequestSize, payloadMaxResponseSize, len(body), len(reqPayload), len(respPayload), reqTruncated, respTruncated, result.ResponseBody != nil)
 
 		h.submitUsageRecordTask(func(ctx context.Context) {
+			logPayloadAuditRecordTask(reqLog, ctx, "openai.chat_completions", requestPayloadHash, len(reqPayload), len(respPayload), reqTruncated, respTruncated)
 			if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 				Result:            result,
 				APIKey:            apiKey,

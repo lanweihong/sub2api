@@ -410,15 +410,24 @@ func (h *SoraGatewayHandler) ChatCompletions(c *gin.Context) {
 		// 报文审计：捕获请求/响应报文
 		var reqPayload, respPayload []byte
 		var reqTruncated, respTruncated bool
-		if plCfg, _ := h.settingService.GetPayloadLoggingSettings(c.Request.Context()); plCfg != nil && plCfg.Enabled {
-			reqPayload, reqTruncated = service.TruncateBytesWithFlag(body, plCfg.MaxRequestSize)
-			if result.ResponseBody != nil {
-				respPayload, respTruncated = service.TruncateBytesWithFlag(result.ResponseBody, plCfg.MaxResponseSize)
+		payloadLoggingEnabled := false
+		var payloadMaxRequestSize, payloadMaxResponseSize int64
+		if plCfg, _ := h.settingService.GetPayloadLoggingSettings(c.Request.Context()); plCfg != nil {
+			payloadLoggingEnabled = plCfg.Enabled
+			payloadMaxRequestSize = plCfg.MaxRequestSize
+			payloadMaxResponseSize = plCfg.MaxResponseSize
+			if plCfg.Enabled {
+				reqPayload, reqTruncated = service.TruncateBytesWithFlag(body, plCfg.MaxRequestSize)
+				if result.ResponseBody != nil {
+					respPayload, respTruncated = service.TruncateBytesWithFlag(result.ResponseBody, plCfg.MaxResponseSize)
+				}
 			}
 		}
+		logPayloadAuditCaptureDecision(reqLog, c.Request.Context(), "sora.chat_completions", requestPayloadHash, payloadLoggingEnabled, payloadMaxRequestSize, payloadMaxResponseSize, len(body), len(reqPayload), len(respPayload), reqTruncated, respTruncated, result.ResponseBody != nil)
 
 		// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
 		h.submitUsageRecordTask(func(ctx context.Context) {
+			logPayloadAuditRecordTask(reqLog, ctx, "sora.chat_completions", requestPayloadHash, len(reqPayload), len(respPayload), reqTruncated, respTruncated)
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 				Result:             result,
 				APIKey:             apiKey,

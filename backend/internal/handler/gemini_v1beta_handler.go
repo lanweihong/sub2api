@@ -511,16 +511,25 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		// 报文审计
 		var reqPayload, respPayload []byte
 		var reqTruncated, respTruncated bool
-		if payloadCfg, _ := h.settingService.GetPayloadLoggingSettings(c.Request.Context()); payloadCfg != nil && payloadCfg.Enabled {
-			reqPayload, reqTruncated = service.TruncateBytesWithFlag(body, payloadCfg.MaxRequestSize)
-			if result.ResponseBody != nil {
-				respPayload, respTruncated = service.TruncateBytesWithFlag(result.ResponseBody, payloadCfg.MaxResponseSize)
-			} else if result.ResponseTruncated {
-				respTruncated = true
+		payloadLoggingEnabled := false
+		var payloadMaxRequestSize, payloadMaxResponseSize int64
+		if payloadCfg, _ := h.settingService.GetPayloadLoggingSettings(c.Request.Context()); payloadCfg != nil {
+			payloadLoggingEnabled = payloadCfg.Enabled
+			payloadMaxRequestSize = payloadCfg.MaxRequestSize
+			payloadMaxResponseSize = payloadCfg.MaxResponseSize
+			if payloadCfg.Enabled {
+				reqPayload, reqTruncated = service.TruncateBytesWithFlag(body, payloadCfg.MaxRequestSize)
+				if result.ResponseBody != nil {
+					respPayload, respTruncated = service.TruncateBytesWithFlag(result.ResponseBody, payloadCfg.MaxResponseSize)
+				} else if result.ResponseTruncated {
+					respTruncated = true
+				}
 			}
 		}
+		logPayloadAuditCaptureDecision(reqLog, c.Request.Context(), "gemini.v1beta.models", requestPayloadHash, payloadLoggingEnabled, payloadMaxRequestSize, payloadMaxResponseSize, len(body), len(reqPayload), len(respPayload), reqTruncated, respTruncated, result.ResponseBody != nil)
 
 		h.submitUsageRecordTask(func(ctx context.Context) {
+			logPayloadAuditRecordTask(reqLog, ctx, "gemini.v1beta.models", requestPayloadHash, len(reqPayload), len(respPayload), reqTruncated, respTruncated)
 			if err := h.gatewayService.RecordUsageWithLongContext(ctx, &service.RecordUsageLongContextInput{
 				Result:                result,
 				APIKey:                apiKey,

@@ -479,17 +479,26 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// 报文审计：捕获请求/响应报文
 			var reqPayload, respPayload []byte
 			var reqTruncated, respTruncated bool
-			if payloadCfg, _ := h.settingService.GetPayloadLoggingSettings(c.Request.Context()); payloadCfg != nil && payloadCfg.Enabled {
-				reqPayload, reqTruncated = service.TruncateBytesWithFlag(body, payloadCfg.MaxRequestSize)
-				if result.ResponseBody != nil {
-					respPayload, respTruncated = service.TruncateBytesWithFlag(result.ResponseBody, payloadCfg.MaxResponseSize)
-				} else if result.ResponseTruncated {
-					respTruncated = true
+			payloadLoggingEnabled := false
+			var payloadMaxRequestSize, payloadMaxResponseSize int64
+			if payloadCfg, _ := h.settingService.GetPayloadLoggingSettings(c.Request.Context()); payloadCfg != nil {
+				payloadLoggingEnabled = payloadCfg.Enabled
+				payloadMaxRequestSize = payloadCfg.MaxRequestSize
+				payloadMaxResponseSize = payloadCfg.MaxResponseSize
+				if payloadCfg.Enabled {
+					reqPayload, reqTruncated = service.TruncateBytesWithFlag(body, payloadCfg.MaxRequestSize)
+					if result.ResponseBody != nil {
+						respPayload, respTruncated = service.TruncateBytesWithFlag(result.ResponseBody, payloadCfg.MaxResponseSize)
+					} else if result.ResponseTruncated {
+						respTruncated = true
+					}
 				}
 			}
+			logPayloadAuditCaptureDecision(reqLog, c.Request.Context(), "anthropic.messages", requestPayloadHash, payloadLoggingEnabled, payloadMaxRequestSize, payloadMaxResponseSize, len(body), len(reqPayload), len(respPayload), reqTruncated, respTruncated, result.ResponseBody != nil)
 
 			// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
 			h.submitUsageRecordTask(func(ctx context.Context) {
+				logPayloadAuditRecordTask(reqLog, ctx, "anthropic.messages", requestPayloadHash, len(reqPayload), len(respPayload), reqTruncated, respTruncated)
 				if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 					Result:             result,
 					APIKey:             apiKey,
@@ -831,17 +840,26 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// 报文审计：捕获请求/响应报文
 			var reqPayload2, respPayload2 []byte
 			var reqTruncated2, respTruncated2 bool
-			if payloadCfg, _ := h.settingService.GetPayloadLoggingSettings(c.Request.Context()); payloadCfg != nil && payloadCfg.Enabled {
-				reqPayload2, reqTruncated2 = service.TruncateBytesWithFlag(body, payloadCfg.MaxRequestSize)
-				if result.ResponseBody != nil {
-					respPayload2, respTruncated2 = service.TruncateBytesWithFlag(result.ResponseBody, payloadCfg.MaxResponseSize)
-				} else if result.ResponseTruncated {
-					respTruncated2 = true
+			payloadLoggingEnabled2 := false
+			var payloadMaxRequestSize2, payloadMaxResponseSize2 int64
+			if payloadCfg, _ := h.settingService.GetPayloadLoggingSettings(c.Request.Context()); payloadCfg != nil {
+				payloadLoggingEnabled2 = payloadCfg.Enabled
+				payloadMaxRequestSize2 = payloadCfg.MaxRequestSize
+				payloadMaxResponseSize2 = payloadCfg.MaxResponseSize
+				if payloadCfg.Enabled {
+					reqPayload2, reqTruncated2 = service.TruncateBytesWithFlag(body, payloadCfg.MaxRequestSize)
+					if result.ResponseBody != nil {
+						respPayload2, respTruncated2 = service.TruncateBytesWithFlag(result.ResponseBody, payloadCfg.MaxResponseSize)
+					} else if result.ResponseTruncated {
+						respTruncated2 = true
+					}
 				}
 			}
+			logPayloadAuditCaptureDecision(reqLog, c.Request.Context(), "anthropic.messages", requestPayloadHash, payloadLoggingEnabled2, payloadMaxRequestSize2, payloadMaxResponseSize2, len(body), len(reqPayload2), len(respPayload2), reqTruncated2, respTruncated2, result.ResponseBody != nil)
 
 			// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
 			h.submitUsageRecordTask(func(ctx context.Context) {
+				logPayloadAuditRecordTask(reqLog, ctx, "anthropic.messages", requestPayloadHash, len(reqPayload2), len(respPayload2), reqTruncated2, respTruncated2)
 				if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 					Result:             result,
 					APIKey:             currentAPIKey,

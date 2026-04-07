@@ -371,14 +371,23 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		// 报文审计：捕获请求/响应 payload
 		var reqPayload, respPayload []byte
 		var reqTruncated, respTruncated bool
-		if plCfg, _ := h.settingService.GetPayloadLoggingSettings(c.Request.Context()); plCfg != nil && plCfg.Enabled {
-			reqPayload, reqTruncated = service.TruncateBytesWithFlag(body, plCfg.MaxRequestSize)
-			respPayload = result.ResponseBody
-			respTruncated = result.ResponseTruncated
+		payloadLoggingEnabled := false
+		var payloadMaxRequestSize, payloadMaxResponseSize int64
+		if plCfg, _ := h.settingService.GetPayloadLoggingSettings(c.Request.Context()); plCfg != nil {
+			payloadLoggingEnabled = plCfg.Enabled
+			payloadMaxRequestSize = plCfg.MaxRequestSize
+			payloadMaxResponseSize = plCfg.MaxResponseSize
+			if plCfg.Enabled {
+				reqPayload, reqTruncated = service.TruncateBytesWithFlag(body, plCfg.MaxRequestSize)
+				respPayload = result.ResponseBody
+				respTruncated = result.ResponseTruncated
+			}
 		}
+		logPayloadAuditCaptureDecision(reqLog, c.Request.Context(), "openai.responses", requestPayloadHash, payloadLoggingEnabled, payloadMaxRequestSize, payloadMaxResponseSize, len(body), len(reqPayload), len(respPayload), reqTruncated, respTruncated, result.ResponseBody != nil)
 
 		// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
 		h.submitUsageRecordTask(func(ctx context.Context) {
+			logPayloadAuditRecordTask(reqLog, ctx, "openai.responses", requestPayloadHash, len(reqPayload), len(respPayload), reqTruncated, respTruncated)
 			if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 				Result:             result,
 				APIKey:             apiKey,
@@ -765,13 +774,22 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		// 报文审计：捕获请求/响应 payload
 		var msgReqPayload, msgRespPayload []byte
 		var msgReqTruncated, msgRespTruncated bool
-		if plCfg, _ := h.settingService.GetPayloadLoggingSettings(c.Request.Context()); plCfg != nil && plCfg.Enabled {
-			msgReqPayload, msgReqTruncated = service.TruncateBytesWithFlag(body, plCfg.MaxRequestSize)
-			msgRespPayload = result.ResponseBody
-			msgRespTruncated = result.ResponseTruncated
+		payloadLoggingEnabled := false
+		var payloadMaxRequestSize, payloadMaxResponseSize int64
+		if plCfg, _ := h.settingService.GetPayloadLoggingSettings(c.Request.Context()); plCfg != nil {
+			payloadLoggingEnabled = plCfg.Enabled
+			payloadMaxRequestSize = plCfg.MaxRequestSize
+			payloadMaxResponseSize = plCfg.MaxResponseSize
+			if plCfg.Enabled {
+				msgReqPayload, msgReqTruncated = service.TruncateBytesWithFlag(body, plCfg.MaxRequestSize)
+				msgRespPayload = result.ResponseBody
+				msgRespTruncated = result.ResponseTruncated
+			}
 		}
+		logPayloadAuditCaptureDecision(reqLog, c.Request.Context(), "openai.messages", requestPayloadHash, payloadLoggingEnabled, payloadMaxRequestSize, payloadMaxResponseSize, len(body), len(msgReqPayload), len(msgRespPayload), msgReqTruncated, msgRespTruncated, result.ResponseBody != nil)
 
 		h.submitUsageRecordTask(func(ctx context.Context) {
+			logPayloadAuditRecordTask(reqLog, ctx, "openai.messages", requestPayloadHash, len(msgReqPayload), len(msgRespPayload), msgReqTruncated, msgRespTruncated)
 			if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 				Result:             result,
 				APIKey:             apiKey,
@@ -1279,11 +1297,21 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			// 报文审计：WebSocket 仅捕获首个消息作为请求 payload
 			var wsReqPayload []byte
 			var wsReqTruncated bool
-			if plCfg, _ := h.settingService.GetPayloadLoggingSettings(ctx); plCfg != nil && plCfg.Enabled {
-				wsReqPayload, wsReqTruncated = service.TruncateBytesWithFlag(firstMessage, plCfg.MaxRequestSize)
+			payloadLoggingEnabled := false
+			var payloadMaxRequestSize, payloadMaxResponseSize int64
+			requestPayloadHash := service.HashUsageRequestPayload(firstMessage)
+			if plCfg, _ := h.settingService.GetPayloadLoggingSettings(ctx); plCfg != nil {
+				payloadLoggingEnabled = plCfg.Enabled
+				payloadMaxRequestSize = plCfg.MaxRequestSize
+				payloadMaxResponseSize = plCfg.MaxResponseSize
+				if plCfg.Enabled {
+					wsReqPayload, wsReqTruncated = service.TruncateBytesWithFlag(firstMessage, plCfg.MaxRequestSize)
+				}
 			}
+			logPayloadAuditCaptureDecision(reqLog, ctx, "openai.websocket", requestPayloadHash, payloadLoggingEnabled, payloadMaxRequestSize, payloadMaxResponseSize, len(firstMessage), len(wsReqPayload), 0, wsReqTruncated, false, false)
 
 			h.submitUsageRecordTask(func(taskCtx context.Context) {
+				logPayloadAuditRecordTask(reqLog, taskCtx, "openai.websocket", requestPayloadHash, len(wsReqPayload), 0, wsReqTruncated, false)
 				if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
 					Result:             result,
 					APIKey:             apiKey,
@@ -1294,7 +1322,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					UpstreamEndpoint:   GetUpstreamEndpoint(c, account.Platform),
 					UserAgent:          userAgent,
 					IPAddress:          clientIP,
-					RequestPayloadHash: service.HashUsageRequestPayload(firstMessage),
+					RequestPayloadHash: requestPayloadHash,
 					APIKeyService:      h.apiKeyService,
 					RequestPayload:     wsReqPayload,
 					RequestTruncated:   wsReqTruncated,
