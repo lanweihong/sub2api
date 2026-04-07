@@ -3350,9 +3350,9 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 
 // openaiStreamingResult streaming response result
 type openaiStreamingResult struct {
-	usage            *OpenAIUsage
-	firstTokenMs     *int
-	responseBody     []byte
+	usage             *OpenAIUsage
+	firstTokenMs      *int
+	responseBody      []byte
 	responseTruncated bool
 }
 
@@ -4348,9 +4348,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
-		if usageLog.ID > 0 && (len(input.RequestPayload) > 0 || len(input.ResponsePayload) > 0) {
-			writePayloadBestEffort(ctx, s.payloadRepo, usageLog.ID, input.RequestPayload, input.ResponsePayload, input.RequestTruncated, input.ResponseTruncated)
-		}
+		persistPayloadAuditIfNeeded(ctx, "service.openai_gateway", requestID, s.payloadRepo, usageLog.ID, input.RequestPayload, input.ResponsePayload, input.RequestTruncated, input.ResponseTruncated)
 		logger.LegacyPrintf("service.openai_gateway", "[SIMPLE MODE] Usage recorded (not billed): user=%d, tokens=%d", usageLog.UserID, usageLog.TotalTokens())
 		s.deferredService.ScheduleLastUsedUpdate(account.ID)
 		return nil
@@ -4375,9 +4373,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		return billingErr
 	}
 	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
-	if usageLog.ID > 0 && (len(input.RequestPayload) > 0 || len(input.ResponsePayload) > 0) {
-		writePayloadBestEffort(ctx, s.payloadRepo, usageLog.ID, input.RequestPayload, input.ResponsePayload, input.RequestTruncated, input.ResponseTruncated)
-	}
+	persistPayloadAuditIfNeeded(ctx, "service.openai_gateway", requestID, s.payloadRepo, usageLog.ID, input.RequestPayload, input.ResponsePayload, input.RequestTruncated, input.ResponseTruncated)
 
 	return nil
 }

@@ -34,6 +34,7 @@ import (
 	gocache "github.com/patrickmn/go-cache"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"go.uber.org/zap"
 	"golang.org/x/sync/singleflight"
 
 	"github.com/gin-gonic/gin"
@@ -7771,8 +7772,19 @@ func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usage
 }
 
 // writePayloadBestEffort 最大努力写入报文，失败仅记日志
-func writePayloadBestEffort(ctx context.Context, repo UsageLogPayloadRepository, usageLogID int64, reqPayload, respPayload []byte, reqTruncated, respTruncated bool) {
+func writePayloadBestEffort(ctx context.Context, component string, usageRequestID string, repo UsageLogPayloadRepository, usageLogID int64, reqPayload, respPayload []byte, reqTruncated, respTruncated bool) {
 	if repo == nil {
+		logPayloadAuditPersistenceSkipped(
+			ctx,
+			component,
+			usageRequestID,
+			"payload_repo_nil",
+			usageLogID,
+			len(reqPayload),
+			len(respPayload),
+			reqTruncated,
+			respTruncated,
+		)
 		return
 	}
 	payload := &UsageLogPayloadRecord{
@@ -7785,8 +7797,27 @@ func writePayloadBestEffort(ctx context.Context, repo UsageLogPayloadRepository,
 	payloadCtx, cancel := detachedBillingContext(ctx)
 	defer cancel()
 	if err := repo.Upsert(payloadCtx, payload); err != nil {
-		logger.LegacyPrintf("service.gateway", "Write usage log payload failed: usage_log_id=%d, error=%v", usageLogID, err)
+		payloadAuditServiceLogger(component, ctx).Error("Write usage log payload failed",
+			zap.String("usage_request_id", strings.TrimSpace(usageRequestID)),
+			zap.Int64("usage_log_id", usageLogID),
+			zap.Int("request_payload_len", len(reqPayload)),
+			zap.Int("response_payload_len", len(respPayload)),
+			zap.Bool("request_truncated", reqTruncated),
+			zap.Bool("response_truncated", respTruncated),
+			zap.Error(err),
+		)
+		return
 	}
+	logPayloadAuditPersisted(
+		ctx,
+		component,
+		usageRequestID,
+		usageLogID,
+		len(reqPayload),
+		len(respPayload),
+		reqTruncated,
+		respTruncated,
+	)
 }
 
 // RecordUsage 记录使用量并扣费（或更新订阅用量）
@@ -7948,9 +7979,7 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
-		if usageLog.ID > 0 && (len(input.RequestPayload) > 0 || len(input.ResponsePayload) > 0) {
-			writePayloadBestEffort(ctx, s.payloadRepo, usageLog.ID, input.RequestPayload, input.ResponsePayload, input.RequestTruncated, input.ResponseTruncated)
-		}
+		persistPayloadAuditIfNeeded(ctx, "service.gateway", requestID, s.payloadRepo, usageLog.ID, input.RequestPayload, input.ResponsePayload, input.RequestTruncated, input.ResponseTruncated)
 		logger.LegacyPrintf("service.gateway", "[SIMPLE MODE] Usage recorded (not billed): user=%d, tokens=%d", usageLog.UserID, usageLog.TotalTokens())
 		s.deferredService.ScheduleLastUsedUpdate(account.ID)
 		return nil
@@ -7975,9 +8004,7 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 		return billingErr
 	}
 	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
-	if usageLog.ID > 0 && (len(input.RequestPayload) > 0 || len(input.ResponsePayload) > 0) {
-		writePayloadBestEffort(ctx, s.payloadRepo, usageLog.ID, input.RequestPayload, input.ResponsePayload, input.RequestTruncated, input.ResponseTruncated)
-	}
+	persistPayloadAuditIfNeeded(ctx, "service.gateway", requestID, s.payloadRepo, usageLog.ID, input.RequestPayload, input.ResponsePayload, input.RequestTruncated, input.ResponseTruncated)
 
 	return nil
 }
@@ -8143,9 +8170,7 @@ func (s *GatewayService) RecordUsageWithLongContext(ctx context.Context, input *
 
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
-		if usageLog.ID > 0 && (len(input.RequestPayload) > 0 || len(input.ResponsePayload) > 0) {
-			writePayloadBestEffort(ctx, s.payloadRepo, usageLog.ID, input.RequestPayload, input.ResponsePayload, input.RequestTruncated, input.ResponseTruncated)
-		}
+		persistPayloadAuditIfNeeded(ctx, "service.gateway", requestID, s.payloadRepo, usageLog.ID, input.RequestPayload, input.ResponsePayload, input.RequestTruncated, input.ResponseTruncated)
 		logger.LegacyPrintf("service.gateway", "[SIMPLE MODE] Usage recorded (not billed): user=%d, tokens=%d", usageLog.UserID, usageLog.TotalTokens())
 		s.deferredService.ScheduleLastUsedUpdate(account.ID)
 		return nil
@@ -8170,9 +8195,7 @@ func (s *GatewayService) RecordUsageWithLongContext(ctx context.Context, input *
 		return billingErr
 	}
 	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
-	if usageLog.ID > 0 && (len(input.RequestPayload) > 0 || len(input.ResponsePayload) > 0) {
-		writePayloadBestEffort(ctx, s.payloadRepo, usageLog.ID, input.RequestPayload, input.ResponsePayload, input.RequestTruncated, input.ResponseTruncated)
-	}
+	persistPayloadAuditIfNeeded(ctx, "service.gateway", requestID, s.payloadRepo, usageLog.ID, input.RequestPayload, input.ResponsePayload, input.RequestTruncated, input.ResponseTruncated)
 
 	return nil
 }
