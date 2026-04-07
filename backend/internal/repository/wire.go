@@ -106,7 +106,7 @@ var ProviderSet = wire.NewSet(
 
 	// Backup infrastructure
 	NewPgDumper,
-	NewS3BackupStoreFactory,
+	NewBackupStoreFactory,
 
 	// HTTP service ports (DI Strategy A: return interface directly)
 	NewTurnstileVerifier,

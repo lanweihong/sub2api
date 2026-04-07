@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"sort"
 	"strings"
 	"sync"
@@ -55,25 +56,67 @@ type BackupObjectStore interface {
 	HeadBucket(ctx context.Context) error
 }
 
-// BackupObjectStoreFactory creates an object store from S3 config
-type BackupObjectStoreFactory func(ctx context.Context, cfg *BackupS3Config) (BackupObjectStore, error)
+// BackupObjectStoreFactory creates an object store from storage config
+type BackupObjectStoreFactory func(ctx context.Context, cfg *BackupStorageConfig) (BackupObjectStore, error)
 
 // ─── 数据模型 ───
 
-// BackupS3Config S3 兼容存储配置（支持 Cloudflare R2）
-type BackupS3Config struct {
-	Endpoint        string `json:"endpoint"` // e.g. https://<account_id>.r2.cloudflarestorage.com
-	Region          string `json:"region"`   // R2 用 "auto"
-	Bucket          string `json:"bucket"`
-	AccessKeyID     string `json:"access_key_id"`
-	SecretAccessKey string `json:"secret_access_key,omitempty"` //nolint:revive // field name follows AWS convention
-	Prefix          string `json:"prefix"`                      // S3 key 前缀，如 "backups/"
-	ForcePathStyle  bool   `json:"force_path_style"`
+// BackupStorageProvider 存储提供商类型
+type BackupStorageProvider string
+
+const (
+	BackupStorageProviderS3    BackupStorageProvider = "s3"
+	BackupStorageProviderOSS   BackupStorageProvider = "oss"
+	BackupStorageProviderQiniu BackupStorageProvider = "qiniu"
+)
+
+// BackupStorageConfig 统一存储配置（兼容旧 BackupS3Config）
+type BackupStorageConfig struct {
+	// 通用字段
+	Provider        BackupStorageProvider `json:"provider"`                    // 存储类型："s3" | "oss" | "qiniu"
+	Bucket          string                `json:"bucket"`                      // 存储桶名称
+	Prefix          string                `json:"prefix"`                      // Key 前缀，如 "backups/"
+	AccessKeyID     string                `json:"access_key_id"`               // 访问密钥 ID
+	SecretAccessKey string                `json:"secret_access_key,omitempty"` //nolint:revive // field name follows AWS/cloud convention
+
+	// S3 专用字段
+	Endpoint       string `json:"endpoint,omitempty"`          // S3 自定义端点，如 https://<account_id>.r2.cloudflarestorage.com
+	Region         string `json:"region,omitempty"`            // S3 区域，R2 用 "auto"
+	ForcePathStyle bool   `json:"force_path_style,omitempty"` // S3 路径风格
+
+	// 阿里云 OSS 专用字段
+	OSSEndpoint string `json:"oss_endpoint,omitempty"` // OSS 端点，如 oss-cn-hangzhou.aliyuncs.com
+	OSSRegion   string `json:"oss_region,omitempty"`   // OSS 区域，如 cn-hangzhou
+
+	// 七牛云专用字段
+	QiniuRegion string `json:"qiniu_region,omitempty"` // 七牛区域：z0/z1/z2/cn-east-2/na0/as0
+	QiniuDomain string `json:"qiniu_domain,omitempty"` // 七牛下载域名（必填，七牛下载需绑定域名）
+
+	// 上传临时目录（可选，默认使用系统临时目录）
+	TempDir string `json:"temp_dir,omitempty"`
 }
 
-// IsConfigured 检查必要字段是否已配置
-func (c *BackupS3Config) IsConfigured() bool {
-	return c.Bucket != "" && c.AccessKeyID != "" && c.SecretAccessKey != ""
+// BackupS3Config is an alias for backward compatibility
+type BackupS3Config = BackupStorageConfig
+
+// NormalizeProvider 向后兼容：旧配置无 provider 字段时默认为 S3
+func (c *BackupStorageConfig) NormalizeProvider() {
+	if c.Provider == "" {
+		c.Provider = BackupStorageProviderS3
+	}
+}
+
+// IsConfigured 按 provider 类型校验必填字段
+func (c *BackupStorageConfig) IsConfigured() bool {
+	base := c.Bucket != "" && c.AccessKeyID != "" && c.SecretAccessKey != ""
+	switch c.Provider {
+	case BackupStorageProviderOSS:
+		return base && c.OSSEndpoint != ""
+	case BackupStorageProviderQiniu:
+		return base && c.QiniuDomain != ""
+	default: // s3
+		return base
+	}
 }
 
 // BackupScheduleConfig 定时备份配置
@@ -101,6 +144,31 @@ type BackupRecord struct {
 	RestoreStatus string `json:"restore_status,omitempty"` // "", "running", "completed", "failed"
 	RestoreError  string `json:"restore_error,omitempty"`
 	RestoredAt    string `json:"restored_at,omitempty"`
+
+	// 存储元数据：记录备份创建时使用的存储配置，确保切换 provider 后历史备份仍可恢复
+	StorageProvider BackupStorageProvider `json:"storage_provider,omitempty"` // 备份时使用的存储提供商
+	StorageBucket   string                `json:"storage_bucket,omitempty"`   // 备份时使用的存储桶
+	StorageConfig   *BackupStorageConfig  `json:"-"`                          // 备份时的完整存储配置快照（仅用于内部持久化，不暴露给 API）
+}
+
+// backupRecordPersist 用于 JSON 持久化的内部结构，包含 StorageConfig
+type backupRecordPersist struct {
+	BackupRecord
+	StorageConfig *BackupStorageConfig `json:"storage_config,omitempty"`
+}
+
+// toPersist 转换为持久化结构
+func (r *BackupRecord) toPersist() backupRecordPersist {
+	return backupRecordPersist{
+		BackupRecord:  *r,
+		StorageConfig: r.StorageConfig,
+	}
+}
+
+// fromPersist 从持久化结构恢复
+func (r *BackupRecord) fromPersist(p backupRecordPersist) {
+	*r = p.BackupRecord
+	r.StorageConfig = p.StorageConfig
 }
 
 // BackupService 数据库备份恢复服务
@@ -115,9 +183,9 @@ type BackupService struct {
 	backingUp bool
 	restoring bool
 
-	storeMu sync.Mutex // 保护 store/s3Cfg 缓存
-	store   BackupObjectStore
-	s3Cfg   *BackupS3Config
+	storeMu    sync.Mutex // 保护 store/storageCfg 缓存
+	store      BackupObjectStore
+	storageCfg *BackupStorageConfig
 
 	recordsMu sync.Mutex // 保护 records 的 load/save 操作
 
@@ -236,20 +304,22 @@ func (s *BackupService) Stop() {
 
 // ─── S3 配置管理 ───
 
-func (s *BackupService) GetS3Config(ctx context.Context) (*BackupS3Config, error) {
+func (s *BackupService) GetS3Config(ctx context.Context) (*BackupStorageConfig, error) {
 	cfg, err := s.loadS3Config(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if cfg == nil {
-		return &BackupS3Config{}, nil
+		return &BackupStorageConfig{}, nil
 	}
 	// 脱敏返回
 	cfg.SecretAccessKey = ""
 	return cfg, nil
 }
 
-func (s *BackupService) UpdateS3Config(ctx context.Context, cfg BackupS3Config) (*BackupS3Config, error) {
+func (s *BackupService) UpdateS3Config(ctx context.Context, cfg BackupStorageConfig) (*BackupStorageConfig, error) {
+	cfg.NormalizeProvider()
+
 	// 如果没提供 secret，保留原有值
 	if cfg.SecretAccessKey == "" {
 		old, _ := s.loadS3Config(ctx)
@@ -267,23 +337,25 @@ func (s *BackupService) UpdateS3Config(ctx context.Context, cfg BackupS3Config) 
 
 	data, err := json.Marshal(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("marshal s3 config: %w", err)
+		return nil, fmt.Errorf("marshal storage config: %w", err)
 	}
 	if err := s.settingRepo.Set(ctx, settingKeyBackupS3Config, string(data)); err != nil {
-		return nil, fmt.Errorf("save s3 config: %w", err)
+		return nil, fmt.Errorf("save storage config: %w", err)
 	}
 
-	// 清除缓存的 S3 客户端
+	// 清除缓存的存储客户端
 	s.storeMu.Lock()
 	s.store = nil
-	s.s3Cfg = nil
+	s.storageCfg = nil
 	s.storeMu.Unlock()
 
 	cfg.SecretAccessKey = ""
 	return &cfg, nil
 }
 
-func (s *BackupService) TestS3Connection(ctx context.Context, cfg BackupS3Config) error {
+func (s *BackupService) TestS3Connection(ctx context.Context, cfg BackupStorageConfig) error {
+	cfg.NormalizeProvider()
+
 	// 如果没提供 secret，用已保存的
 	if cfg.SecretAccessKey == "" {
 		old, _ := s.loadS3Config(ctx)
@@ -293,14 +365,63 @@ func (s *BackupService) TestS3Connection(ctx context.Context, cfg BackupS3Config
 	}
 
 	if cfg.Bucket == "" || cfg.AccessKeyID == "" || cfg.SecretAccessKey == "" {
-		return fmt.Errorf("incomplete S3 config: bucket, access_key_id, secret_access_key are required")
+		return fmt.Errorf("incomplete storage config: bucket, access_key_id, secret_access_key are required")
 	}
 
 	store, err := s.storeFactory(ctx, &cfg)
 	if err != nil {
 		return err
 	}
-	return store.HeadBucket(ctx)
+
+	// 步骤1：验证 AK/SK 和 Bucket
+	if err := store.HeadBucket(ctx); err != nil {
+		return err
+	}
+
+	// 步骤2：对七牛云额外验证下载域名是否可用
+	if cfg.Provider == BackupStorageProviderQiniu {
+		if err := s.testQiniuDownloadDomain(ctx, store, &cfg); err != nil {
+			return fmt.Errorf("qiniu download domain verification failed: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// testQiniuDownloadDomain 上传临时测试文件，用七牛域名生成签名 URL 发起 HEAD 请求验证，最后清理
+func (s *BackupService) testQiniuDownloadDomain(ctx context.Context, store BackupObjectStore, cfg *BackupStorageConfig) error {
+	testKey := fmt.Sprintf("%s/.sub2api_connection_test_%d", strings.TrimRight(cfg.Prefix, "/"), time.Now().UnixNano())
+	testData := strings.NewReader("sub2api-test")
+
+	// 上传测试对象
+	if _, err := store.Upload(ctx, testKey, testData, "text/plain"); err != nil {
+		return fmt.Errorf("upload test object: %w", err)
+	}
+
+	// 确保清理测试对象
+	defer func() { _ = store.Delete(ctx, testKey) }()
+
+	// 用域名生成签名 URL 并验证可达性
+	signedURL, err := store.PresignURL(ctx, testKey, 5*time.Minute)
+	if err != nil {
+		return fmt.Errorf("generate presign URL: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, signedURL, nil)
+	if err != nil {
+		return fmt.Errorf("create HEAD request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("qiniu_domain unreachable (%s): %w", cfg.QiniuDomain, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("qiniu_domain returned HTTP %d for test object (domain: %s)", resp.StatusCode, cfg.QiniuDomain)
+	}
+
+	return nil
 }
 
 // ─── 定时备份管理 ───
@@ -465,14 +586,17 @@ func (s *BackupService) CreateBackup(ctx context.Context, triggeredBy string, ex
 	}
 
 	record := &BackupRecord{
-		ID:          backupID,
-		Status:      "running",
-		BackupType:  "postgres",
-		FileName:    fileName,
-		S3Key:       s3Key,
-		TriggeredBy: triggeredBy,
-		StartedAt:   now.Format(time.RFC3339),
-		ExpiresAt:   expiresAt,
+		ID:              backupID,
+		Status:          "running",
+		BackupType:      "postgres",
+		FileName:        fileName,
+		S3Key:           s3Key,
+		TriggeredBy:     triggeredBy,
+		StartedAt:       now.Format(time.RFC3339),
+		ExpiresAt:       expiresAt,
+		StorageProvider: s3Cfg.Provider,
+		StorageBucket:   s3Cfg.Bucket,
+		StorageConfig:   s.snapshotStorageConfig(s3Cfg),
 	}
 
 	// 流式执行: pg_dump -> gzip -> S3 upload
@@ -588,15 +712,18 @@ func (s *BackupService) StartBackup(ctx context.Context, triggeredBy string, exp
 	}
 
 	record := &BackupRecord{
-		ID:          backupID,
-		Status:      "running",
-		BackupType:  "postgres",
-		FileName:    fileName,
-		S3Key:       s3Key,
-		TriggeredBy: triggeredBy,
-		StartedAt:   now.Format(time.RFC3339),
-		ExpiresAt:   expiresAt,
-		Progress:    "pending",
+		ID:              backupID,
+		Status:          "running",
+		BackupType:      "postgres",
+		FileName:        fileName,
+		S3Key:           s3Key,
+		TriggeredBy:     triggeredBy,
+		StartedAt:       now.Format(time.RFC3339),
+		ExpiresAt:       expiresAt,
+		Progress:        "pending",
+		StorageProvider: s3Cfg.Provider,
+		StorageBucket:   s3Cfg.Bucket,
+		StorageConfig:   s.snapshotStorageConfig(s3Cfg),
 	}
 
 	if err := s.saveRecord(ctx, record); err != nil {
@@ -730,11 +857,7 @@ func (s *BackupService) RestoreBackup(ctx context.Context, backupID string) erro
 		return infraerrors.BadRequest("BACKUP_NOT_COMPLETED", "can only restore from a completed backup")
 	}
 
-	s3Cfg, err := s.loadS3Config(ctx)
-	if err != nil {
-		return err
-	}
-	objectStore, err := s.getOrCreateStore(ctx, s3Cfg)
+	objectStore, err := s.createStoreForRecord(ctx, record)
 	if err != nil {
 		return fmt.Errorf("init object store: %w", err)
 	}
@@ -793,11 +916,7 @@ func (s *BackupService) StartRestore(ctx context.Context, backupID string) (*Bac
 		return nil, infraerrors.BadRequest("BACKUP_NOT_COMPLETED", "can only restore from a completed backup")
 	}
 
-	s3Cfg, err := s.loadS3Config(ctx)
-	if err != nil {
-		return nil, err
-	}
-	objectStore, err := s.getOrCreateStore(ctx, s3Cfg)
+	objectStore, err := s.createStoreForRecord(ctx, record)
 	if err != nil {
 		return nil, fmt.Errorf("init object store: %w", err)
 	}
@@ -916,14 +1035,11 @@ func (s *BackupService) DeleteBackup(ctx context.Context, backupID string) error
 		return ErrBackupNotFound
 	}
 
-	// 从 S3 删除
+	// 从对象存储删除（使用备份时的存储配置）
 	if found.S3Key != "" && found.Status == "completed" {
-		s3Cfg, err := s.loadS3Config(ctx)
-		if err == nil && s3Cfg != nil && s3Cfg.IsConfigured() {
-			objectStore, err := s.getOrCreateStore(ctx, s3Cfg)
-			if err == nil {
-				_ = objectStore.Delete(ctx, found.S3Key)
-			}
+		objectStore, err := s.createStoreForRecord(ctx, found)
+		if err == nil {
+			_ = objectStore.Delete(ctx, found.S3Key)
 		}
 	}
 
@@ -940,11 +1056,7 @@ func (s *BackupService) GetBackupDownloadURL(ctx context.Context, backupID strin
 		return "", infraerrors.BadRequest("BACKUP_NOT_COMPLETED", "backup is not completed")
 	}
 
-	s3Cfg, err := s.loadS3Config(ctx)
-	if err != nil {
-		return "", err
-	}
-	objectStore, err := s.getOrCreateStore(ctx, s3Cfg)
+	objectStore, err := s.createStoreForRecord(ctx, record)
 	if err != nil {
 		return "", err
 	}
@@ -958,21 +1070,22 @@ func (s *BackupService) GetBackupDownloadURL(ctx context.Context, backupID strin
 
 // ─── 内部方法 ───
 
-func (s *BackupService) loadS3Config(ctx context.Context) (*BackupS3Config, error) {
+func (s *BackupService) loadS3Config(ctx context.Context) (*BackupStorageConfig, error) {
 	raw, err := s.settingRepo.GetValue(ctx, settingKeyBackupS3Config)
 	if err != nil || raw == "" {
 		return nil, nil //nolint:nilnil // no config is a valid state
 	}
-	var cfg BackupS3Config
+	var cfg BackupStorageConfig
 	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
 		return nil, ErrBackupS3ConfigCorrupt
 	}
+	cfg.NormalizeProvider() // 兼容旧配置：无 provider 字段时默认 s3
 	// 解密 SecretAccessKey
 	if cfg.SecretAccessKey != "" {
 		decrypted, err := s.encryptor.Decrypt(cfg.SecretAccessKey)
 		if err != nil {
 			// 兼容未加密的旧数据：如果解密失败，保持原值
-			logger.LegacyPrintf("service.backup", "[Backup] S3 SecretAccessKey 解密失败（可能是旧的未加密数据）: %v", err)
+			logger.LegacyPrintf("service.backup", "[Backup] SecretAccessKey 解密失败（可能是旧的未加密数据）: %v", err)
 		} else {
 			cfg.SecretAccessKey = decrypted
 		}
@@ -980,11 +1093,11 @@ func (s *BackupService) loadS3Config(ctx context.Context) (*BackupS3Config, erro
 	return &cfg, nil
 }
 
-func (s *BackupService) getOrCreateStore(ctx context.Context, cfg *BackupS3Config) (BackupObjectStore, error) {
+func (s *BackupService) getOrCreateStore(ctx context.Context, cfg *BackupStorageConfig) (BackupObjectStore, error) {
 	s.storeMu.Lock()
 	defer s.storeMu.Unlock()
 
-	if s.store != nil && s.s3Cfg != nil {
+	if s.store != nil && s.storageCfg != nil {
 		return s.store, nil
 	}
 
@@ -997,16 +1110,64 @@ func (s *BackupService) getOrCreateStore(ctx context.Context, cfg *BackupS3Confi
 		return nil, err
 	}
 	s.store = store
-	s.s3Cfg = cfg
+	s.storageCfg = cfg
 	return store, nil
 }
 
-func (s *BackupService) buildS3Key(cfg *BackupS3Config, fileName string) string {
+func (s *BackupService) buildS3Key(cfg *BackupStorageConfig, fileName string) string {
 	prefix := strings.TrimRight(cfg.Prefix, "/")
 	if prefix == "" {
 		prefix = "backups"
 	}
 	return fmt.Sprintf("%s/%s/%s", prefix, time.Now().Format("2006/01/02"), fileName)
+}
+
+// snapshotStorageConfig 基于当前已加载的配置创建快照，确保快照与实际使用的配置一致。
+// cfg 来自 loadS3Config，其 SecretAccessKey 已是明文，需重新加密后存入快照。
+func (s *BackupService) snapshotStorageConfig(cfg *BackupStorageConfig) *BackupStorageConfig {
+	if cfg == nil {
+		return nil
+	}
+	snapshot := *cfg // 值拷贝
+	// 将明文 SecretAccessKey 加密后存入快照
+	if snapshot.SecretAccessKey != "" {
+		encrypted, err := s.encryptor.Encrypt(snapshot.SecretAccessKey)
+		if err != nil {
+			logger.LegacyPrintf("service.backup", "[Backup] snapshot SecretAccessKey 加密失败: %v", err)
+			// 加密失败时清空敏感字段，避免明文泄露到持久化层
+			snapshot.SecretAccessKey = ""
+		} else {
+			snapshot.SecretAccessKey = encrypted
+		}
+	}
+	return &snapshot
+}
+
+// createStoreForRecord 根据备份记录中的存储元数据创建 store。
+// 优先使用记录快照的配置；若旧记录无元数据，则回退到当前全局配置。
+func (s *BackupService) createStoreForRecord(ctx context.Context, record *BackupRecord) (BackupObjectStore, error) {
+	if record.StorageConfig != nil {
+		// 使用记录快照中保存的配置
+		cfg := *record.StorageConfig
+		cfg.NormalizeProvider()
+		// 解密 SecretAccessKey
+		if cfg.SecretAccessKey != "" {
+			decrypted, err := s.encryptor.Decrypt(cfg.SecretAccessKey)
+			if err != nil {
+				logger.LegacyPrintf("service.backup", "[Backup] record snapshot SecretAccessKey 解密失败: %v", err)
+			} else {
+				cfg.SecretAccessKey = decrypted
+			}
+		}
+		return s.storeFactory(ctx, &cfg)
+	}
+
+	// 旧记录兼容：回退到当前全局配置
+	s3Cfg, err := s.loadS3Config(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.getOrCreateStore(ctx, s3Cfg)
 }
 
 // loadRecords 加载备份记录，区分"无数据"和"数据损坏"
@@ -1022,16 +1183,24 @@ func (s *BackupService) loadRecordsLocked(ctx context.Context) ([]BackupRecord, 
 	if err != nil || raw == "" {
 		return nil, nil //nolint:nilnil // no records is a valid state
 	}
-	var records []BackupRecord
-	if err := json.Unmarshal([]byte(raw), &records); err != nil {
+	var persists []backupRecordPersist
+	if err := json.Unmarshal([]byte(raw), &persists); err != nil {
 		return nil, ErrBackupRecordsCorrupt
+	}
+	records := make([]BackupRecord, len(persists))
+	for i := range persists {
+		records[i].fromPersist(persists[i])
 	}
 	return records, nil
 }
 
 // saveRecordsLocked 在已持有 recordsMu 锁的情况下保存记录
 func (s *BackupService) saveRecordsLocked(ctx context.Context, records []BackupRecord) error {
-	data, err := json.Marshal(records)
+	persists := make([]backupRecordPersist, len(records))
+	for i := range records {
+		persists[i] = records[i].toPersist()
+	}
+	data, err := json.Marshal(persists)
 	if err != nil {
 		return err
 	}
@@ -1110,10 +1279,10 @@ func (s *BackupService) cleanupOldBackups(ctx context.Context, schedule *BackupS
 		}
 	}
 
-	// 删除 S3 上的文件
-	for _, r := range toDelete {
-		if r.S3Key != "" {
-			_ = s.deleteS3Object(ctx, r.S3Key)
+	// 删除对象存储上的文件（使用备份时的存储配置）
+	for i := range toDelete {
+		if toDelete[i].S3Key != "" {
+			_ = s.deleteObjectForRecord(ctx, &toDelete[i])
 		}
 	}
 
@@ -1124,14 +1293,10 @@ func (s *BackupService) cleanupOldBackups(ctx context.Context, schedule *BackupS
 	return nil
 }
 
-func (s *BackupService) deleteS3Object(ctx context.Context, key string) error {
-	s3Cfg, err := s.loadS3Config(ctx)
-	if err != nil || s3Cfg == nil {
-		return nil
-	}
-	objectStore, err := s.getOrCreateStore(ctx, s3Cfg)
+func (s *BackupService) deleteObjectForRecord(ctx context.Context, record *BackupRecord) error {
+	objectStore, err := s.createStoreForRecord(ctx, record)
 	if err != nil {
 		return err
 	}
-	return objectStore.Delete(ctx, key)
+	return objectStore.Delete(ctx, record.S3Key)
 }

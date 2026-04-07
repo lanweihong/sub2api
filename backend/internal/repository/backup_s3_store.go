@@ -1,10 +1,10 @@
 package repository
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -20,59 +20,71 @@ import (
 type S3BackupStore struct {
 	client *s3.Client
 	bucket string
+	tmpDir string
 }
 
 // NewS3BackupStoreFactory returns a BackupObjectStoreFactory that creates S3-backed stores
+//
+// Deprecated: Use NewBackupStoreFactory instead, which supports multiple storage providers.
 func NewS3BackupStoreFactory() service.BackupObjectStoreFactory {
-	return func(ctx context.Context, cfg *service.BackupS3Config) (service.BackupObjectStore, error) {
-		region := cfg.Region
-		if region == "" {
-			region = "auto" // Cloudflare R2 默认 region
-		}
-
-		awsCfg, err := awsconfig.LoadDefaultConfig(ctx,
-			awsconfig.WithRegion(region),
-			awsconfig.WithCredentialsProvider(
-				credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
-			),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("load aws config: %w", err)
-		}
-
-		client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
-			if cfg.Endpoint != "" {
-				o.BaseEndpoint = &cfg.Endpoint
-			}
-			if cfg.ForcePathStyle {
-				o.UsePathStyle = true
-			}
-			o.APIOptions = append(o.APIOptions, v4.SwapComputePayloadSHA256ForUnsignedPayloadMiddleware)
-			o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
-		})
-
-		return &S3BackupStore{client: client, bucket: cfg.Bucket}, nil
+	return func(ctx context.Context, cfg *service.BackupStorageConfig) (service.BackupObjectStore, error) {
+		return NewS3BackupStore(ctx, cfg)
 	}
 }
 
-func (s *S3BackupStore) Upload(ctx context.Context, key string, body io.Reader, contentType string) (int64, error) {
-	// 读取全部内容以获取大小（S3 PutObject 需要知道内容长度）
-	// 注意：阿里云 OSS 不兼容 s3manager 分片上传的签名方式，因此使用 PutObject
-	data, err := io.ReadAll(body)
-	if err != nil {
-		return 0, fmt.Errorf("read body: %w", err)
+// NewS3BackupStore creates an S3BackupStore from BackupStorageConfig
+func NewS3BackupStore(ctx context.Context, cfg *service.BackupStorageConfig) (*S3BackupStore, error) {
+	region := cfg.Region
+	if region == "" {
+		region = "auto" // Cloudflare R2 默认 region
 	}
 
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx,
+		awsconfig.WithRegion(region),
+		awsconfig.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
+		),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("load aws config: %w", err)
+	}
+
+	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+		if cfg.Endpoint != "" {
+			o.BaseEndpoint = &cfg.Endpoint
+		}
+		if cfg.ForcePathStyle {
+			o.UsePathStyle = true
+		}
+		o.APIOptions = append(o.APIOptions, v4.SwapComputePayloadSHA256ForUnsignedPayloadMiddleware)
+		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+	})
+
+	return &S3BackupStore{client: client, bucket: cfg.Bucket, tmpDir: cfg.TempDir}, nil
+}
+
+func (s *S3BackupStore) Upload(ctx context.Context, key string, body io.Reader, contentType string) (int64, error) {
+	// 将数据写入临时文件，避免大文件完全加载到内存
+	tmpFile, size, err := spoolToTempFile(body, s.tmpDir)
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
+	}()
+
 	_, err = s.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:      &s.bucket,
-		Key:         &key,
-		Body:        bytes.NewReader(data),
-		ContentType: &contentType,
+		Bucket:        &s.bucket,
+		Key:           &key,
+		Body:          tmpFile,
+		ContentType:   &contentType,
+		ContentLength: &size,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("S3 PutObject: %w", err)
 	}
-	return int64(len(data)), nil
+	return size, nil
 }
 
 func (s *S3BackupStore) Download(ctx context.Context, key string) (io.ReadCloser, error) {
