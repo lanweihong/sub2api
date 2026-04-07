@@ -701,3 +701,291 @@ func TestStartRestore_Async(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "completed", final.RestoreStatus)
 }
+
+// ─── H1 Fix: StorageConfig 不应出现在 JSON 序列化的 API 响应中 ───
+
+func TestBackupRecord_StorageConfigHiddenInJSON(t *testing.T) {
+	record := BackupRecord{
+		ID:              "test-1",
+		Status:          "completed",
+		StorageProvider: BackupStorageProviderS3,
+		StorageBucket:   "test-bucket",
+		StorageConfig: &BackupStorageConfig{
+			Provider:        BackupStorageProviderS3,
+			Bucket:          "test-bucket",
+			AccessKeyID:     "AKID-sensitive",
+			SecretAccessKey: "ENC:secret-very-sensitive",
+		},
+	}
+
+	data, err := json.Marshal(record)
+	require.NoError(t, err)
+
+	// StorageConfig 的 json tag 为 "-", 不应出现在 JSON 中
+	require.NotContains(t, string(data), "storage_config")
+	require.NotContains(t, string(data), "AKID-sensitive")
+	require.NotContains(t, string(data), "secret-very-sensitive")
+	// 但 storage_provider 和 storage_bucket 应该保留
+	require.Contains(t, string(data), "storage_provider")
+	require.Contains(t, string(data), "storage_bucket")
+}
+
+func TestBackupRecord_PersistRoundTrip(t *testing.T) {
+	// 验证通过 persist 结构体仍能正确序列化/反序列化 StorageConfig
+	original := BackupRecord{
+		ID:              "test-2",
+		Status:          "completed",
+		StorageProvider: BackupStorageProviderOSS,
+		StorageBucket:   "oss-bucket",
+		StorageConfig: &BackupStorageConfig{
+			Provider:        BackupStorageProviderOSS,
+			Bucket:          "oss-bucket",
+			AccessKeyID:     "AKID",
+			SecretAccessKey: "ENC:secret",
+			OSSEndpoint:     "oss-cn-hangzhou.aliyuncs.com",
+		},
+	}
+
+	p := original.toPersist()
+	data, err := json.Marshal(p)
+	require.NoError(t, err)
+	require.Contains(t, string(data), "storage_config")
+
+	var restored backupRecordPersist
+	require.NoError(t, json.Unmarshal(data, &restored))
+
+	var result BackupRecord
+	result.fromPersist(restored)
+
+	require.Equal(t, original.ID, result.ID)
+	require.NotNil(t, result.StorageConfig)
+	require.Equal(t, "ENC:secret", result.StorageConfig.SecretAccessKey)
+	require.Equal(t, "oss-cn-hangzhou.aliyuncs.com", result.StorageConfig.OSSEndpoint)
+}
+
+// ─── M1 Fix: snapshotStorageConfig 应使用传入的 cfg 而非重新读数据库 ───
+
+func TestSnapshotStorageConfig_UsesPassedConfig(t *testing.T) {
+	repo := newMockSettingRepo()
+	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())
+
+	// 在数据库中保存一份"旧"配置
+	oldCfg := BackupStorageConfig{
+		Provider:        BackupStorageProviderS3,
+		Bucket:          "old-bucket",
+		AccessKeyID:     "OLD-AKID",
+		SecretAccessKey: "ENC:old-secret",
+	}
+	data, _ := json.Marshal(oldCfg)
+	_ = repo.Set(context.Background(), settingKeyBackupS3Config, string(data))
+
+	// 传入一份"新"配置（模拟 loadS3Config 返回的已解密配置）
+	newCfg := &BackupStorageConfig{
+		Provider:        BackupStorageProviderOSS,
+		Bucket:          "new-bucket",
+		AccessKeyID:     "NEW-AKID",
+		SecretAccessKey: "new-secret-plaintext",
+		OSSEndpoint:     "oss-cn-hangzhou.aliyuncs.com",
+	}
+
+	snapshot := svc.snapshotStorageConfig(newCfg)
+	require.NotNil(t, snapshot)
+
+	// 快照应基于传入的 newCfg，而非数据库中的 oldCfg
+	require.Equal(t, BackupStorageProviderOSS, snapshot.Provider)
+	require.Equal(t, "new-bucket", snapshot.Bucket)
+	require.Equal(t, "NEW-AKID", snapshot.AccessKeyID)
+	require.Equal(t, "oss-cn-hangzhou.aliyuncs.com", snapshot.OSSEndpoint)
+	// SecretAccessKey 应已加密
+	require.Equal(t, "ENC:new-secret-plaintext", snapshot.SecretAccessKey)
+}
+
+func TestSnapshotStorageConfig_NilInput(t *testing.T) {
+	repo := newMockSettingRepo()
+	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())
+
+	snapshot := svc.snapshotStorageConfig(nil)
+	require.Nil(t, snapshot)
+}
+
+// ─── createStoreForRecord: 切换 provider 后历史备份仍可恢复 ───
+
+func TestCreateStoreForRecord_UsesSnapshot(t *testing.T) {
+	repo := newMockSettingRepo()
+	store := newMockObjectStore()
+	svc := newTestBackupService(repo, &mockDumper{}, store)
+
+	// 当前全局配置指向 OSS
+	ossCfg := BackupStorageConfig{
+		Provider:        BackupStorageProviderOSS,
+		Bucket:          "oss-bucket",
+		AccessKeyID:     "OSS-AKID",
+		SecretAccessKey: "ENC:oss-secret",
+		OSSEndpoint:     "oss-cn-hangzhou.aliyuncs.com",
+	}
+	data, _ := json.Marshal(ossCfg)
+	_ = repo.Set(context.Background(), settingKeyBackupS3Config, string(data))
+
+	// 旧备份记录快照指向 S3（历史配置）
+	record := &BackupRecord{
+		ID:              "old-backup",
+		Status:          "completed",
+		StorageProvider: BackupStorageProviderS3,
+		StorageBucket:   "s3-bucket",
+		StorageConfig: &BackupStorageConfig{
+			Provider:        BackupStorageProviderS3,
+			Bucket:          "s3-bucket",
+			AccessKeyID:     "S3-AKID",
+			SecretAccessKey: "ENC:s3-secret",
+			Endpoint:        "https://s3.example.com",
+		},
+	}
+
+	// createStoreForRecord 应使用记录快照的配置（S3），而非当前全局配置（OSS）
+	// 由于 mock factory 无法区分 provider，这里验证不抛错即可
+	resultStore, err := svc.createStoreForRecord(context.Background(), record)
+	require.NoError(t, err)
+	require.NotNil(t, resultStore)
+}
+
+func TestCreateStoreForRecord_FallbackToGlobalConfig(t *testing.T) {
+	repo := newMockSettingRepo()
+	store := newMockObjectStore()
+	svc := newTestBackupService(repo, &mockDumper{}, store)
+
+	// 设置全局配置
+	seedS3Config(t, repo)
+
+	// 旧记录没有快照
+	record := &BackupRecord{
+		ID:     "legacy-backup",
+		Status: "completed",
+	}
+
+	resultStore, err := svc.createStoreForRecord(context.Background(), record)
+	require.NoError(t, err)
+	require.NotNil(t, resultStore)
+}
+
+// ─── OSS / Qiniu provider 配置种子与分支覆盖 ───
+
+func seedOSSConfig(t *testing.T, repo *mockSettingRepo) {
+	t.Helper()
+	cfg := BackupStorageConfig{
+		Provider:        BackupStorageProviderOSS,
+		Bucket:          "oss-test-bucket",
+		AccessKeyID:     "OSS-AKID",
+		SecretAccessKey: "ENC:oss-secret",
+		OSSEndpoint:     "oss-cn-hangzhou.aliyuncs.com",
+		OSSRegion:       "cn-hangzhou",
+	}
+	data, _ := json.Marshal(cfg)
+	require.NoError(t, repo.Set(context.Background(), settingKeyBackupS3Config, string(data)))
+}
+
+func seedQiniuConfig(t *testing.T, repo *mockSettingRepo) {
+	t.Helper()
+	cfg := BackupStorageConfig{
+		Provider:        BackupStorageProviderQiniu,
+		Bucket:          "qiniu-test-bucket",
+		AccessKeyID:     "QINIU-AKID",
+		SecretAccessKey: "ENC:qiniu-secret",
+		QiniuRegion:     "z0",
+		QiniuDomain:     "https://cdn.example.com",
+	}
+	data, _ := json.Marshal(cfg)
+	require.NoError(t, repo.Set(context.Background(), settingKeyBackupS3Config, string(data)))
+}
+
+func TestBackupService_CreateBackup_OSSProvider(t *testing.T) {
+	repo := newMockSettingRepo()
+	seedOSSConfig(t, repo)
+
+	dumpContent := "-- PostgreSQL dump for OSS\n"
+	dumper := &mockDumper{dumpData: []byte(dumpContent)}
+	store := newMockObjectStore()
+	svc := newTestBackupService(repo, dumper, store)
+
+	record, err := svc.CreateBackup(context.Background(), "manual", 14)
+	require.NoError(t, err)
+	require.Equal(t, "completed", record.Status)
+	require.Equal(t, BackupStorageProviderOSS, record.StorageProvider)
+	require.Equal(t, "oss-test-bucket", record.StorageBucket)
+	require.NotNil(t, record.StorageConfig)
+}
+
+func TestBackupService_CreateBackup_QiniuProvider(t *testing.T) {
+	repo := newMockSettingRepo()
+	seedQiniuConfig(t, repo)
+
+	dumpContent := "-- PostgreSQL dump for Qiniu\n"
+	dumper := &mockDumper{dumpData: []byte(dumpContent)}
+	store := newMockObjectStore()
+	svc := newTestBackupService(repo, dumper, store)
+
+	record, err := svc.CreateBackup(context.Background(), "manual", 14)
+	require.NoError(t, err)
+	require.Equal(t, "completed", record.Status)
+	require.Equal(t, BackupStorageProviderQiniu, record.StorageProvider)
+	require.Equal(t, "qiniu-test-bucket", record.StorageBucket)
+	require.NotNil(t, record.StorageConfig)
+}
+
+func TestBackupService_TestS3Connection_OSSConfig(t *testing.T) {
+	repo := newMockSettingRepo()
+	store := newMockObjectStore()
+	svc := newTestBackupService(repo, &mockDumper{}, store)
+
+	err := svc.TestS3Connection(context.Background(), BackupStorageConfig{
+		Provider:        BackupStorageProviderOSS,
+		Bucket:          "oss-test",
+		AccessKeyID:     "ak",
+		SecretAccessKey: "sk",
+		OSSEndpoint:     "oss-cn-hangzhou.aliyuncs.com",
+	})
+	require.NoError(t, err)
+}
+
+func TestBackupService_TestS3Connection_QiniuConfig(t *testing.T) {
+	repo := newMockSettingRepo()
+	store := newMockObjectStore()
+	svc := newTestBackupService(repo, &mockDumper{}, store)
+
+	err := svc.TestS3Connection(context.Background(), BackupStorageConfig{
+		Provider:        BackupStorageProviderQiniu,
+		Bucket:          "qiniu-test",
+		AccessKeyID:     "ak",
+		SecretAccessKey: "sk",
+		QiniuDomain:     "https://cdn.example.com",
+	})
+	require.NoError(t, err)
+}
+
+func TestBackupService_SaveAndLoad_WithStorageConfig(t *testing.T) {
+	repo := newMockSettingRepo()
+	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())
+
+	// 保存包含 StorageConfig 的记录
+	record := &BackupRecord{
+		ID:              "persist-test",
+		Status:          "completed",
+		StorageProvider: BackupStorageProviderOSS,
+		StorageBucket:   "oss-bucket",
+		StartedAt:       time.Now().Format(time.RFC3339),
+		StorageConfig: &BackupStorageConfig{
+			Provider:        BackupStorageProviderOSS,
+			Bucket:          "oss-bucket",
+			AccessKeyID:     "AKID",
+			SecretAccessKey: "ENC:secret",
+			OSSEndpoint:     "oss-cn-hangzhou.aliyuncs.com",
+		},
+	}
+	require.NoError(t, svc.saveRecord(context.Background(), record))
+
+	// 重新加载应能还原 StorageConfig
+	loaded, err := svc.GetBackupRecord(context.Background(), "persist-test")
+	require.NoError(t, err)
+	require.NotNil(t, loaded.StorageConfig)
+	require.Equal(t, BackupStorageProviderOSS, loaded.StorageConfig.Provider)
+	require.Equal(t, "ENC:secret", loaded.StorageConfig.SecretAccessKey)
+}
