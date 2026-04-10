@@ -114,6 +114,12 @@ const (
 )
 
 // UsageCache 封装账户使用量相关的缓存
+// zhipuUsageCache 缓存智谱账号用量数据
+type zhipuUsageCache struct {
+	usageInfo *UsageInfo
+	timestamp time.Time
+}
+
 type UsageCache struct {
 	apiCache          sync.Map           // accountID -> *apiUsageCache
 	windowStatsCache  sync.Map           // accountID -> *windowStatsCache
@@ -121,6 +127,8 @@ type UsageCache struct {
 	apiFlight         singleflight.Group // 防止同一账号的并发请求击穿缓存（Anthropic）
 	antigravityFlight singleflight.Group // 防止同一 Antigravity 账号的并发请求击穿缓存
 	openAIProbeCache  sync.Map           // accountID -> time.Time
+	zhipuCache        sync.Map           // accountID -> *zhipuUsageCache
+	zhipuFlight       singleflight.Group // 防止同一智谱账号的并发请求击穿缓存
 }
 
 // NewUsageCache 创建 UsageCache 实例
@@ -222,6 +230,9 @@ type UsageInfo struct {
 
 	// 获取 usage 时的错误信息（降级返回，而非 500）
 	Error string `json:"error,omitempty"`
+
+	// ZhipuDetail 智谱/Z.ai 账号的用量明细（平台 anthropic-zhipu 时填充）
+	ZhipuDetail *ZhipuUsageDetail `json:"zhipu_detail,omitempty"`
 }
 
 // ClaudeUsageResponse Anthropic API返回的usage结构
@@ -263,6 +274,7 @@ type AccountUsageService struct {
 	usageFetcher            ClaudeUsageFetcher
 	geminiQuotaService      *GeminiQuotaService
 	antigravityQuotaFetcher *AntigravityQuotaFetcher
+	zhipuQuotaFetcher       *ZhipuQuotaFetcher
 	cache                   *UsageCache
 	identityCache           IdentityCache
 	tlsFPProfileService     *TLSFingerprintProfileService
@@ -275,6 +287,7 @@ func NewAccountUsageService(
 	usageFetcher ClaudeUsageFetcher,
 	geminiQuotaService *GeminiQuotaService,
 	antigravityQuotaFetcher *AntigravityQuotaFetcher,
+	zhipuQuotaFetcher *ZhipuQuotaFetcher,
 	cache *UsageCache,
 	identityCache IdentityCache,
 	tlsFPProfileService *TLSFingerprintProfileService,
@@ -285,6 +298,7 @@ func NewAccountUsageService(
 		usageFetcher:            usageFetcher,
 		geminiQuotaService:      geminiQuotaService,
 		antigravityQuotaFetcher: antigravityQuotaFetcher,
+		zhipuQuotaFetcher:       zhipuQuotaFetcher,
 		cache:                   cache,
 		identityCache:           identityCache,
 		tlsFPProfileService:     tlsFPProfileService,
@@ -320,6 +334,15 @@ func (s *AccountUsageService) GetUsage(ctx context.Context, accountID int64) (*U
 	// Antigravity 平台：使用 AntigravityQuotaFetcher 获取额度
 	if account.Platform == PlatformAntigravity {
 		usage, err := s.getAntigravityUsage(ctx, account)
+		if err == nil {
+			s.tryClearRecoverableAccountError(ctx, account)
+		}
+		return usage, err
+	}
+
+	// 智谱/Z.ai 平台：使用 ZhipuQuotaFetcher 获取用量（anthropic-zhipu）
+	if account.Platform == "anthropic-zhipu" {
+		usage, err := s.getZhipuUsage(ctx, account)
 		if err == nil {
 			s.tryClearRecoverableAccountError(ctx, account)
 		}
@@ -877,6 +900,87 @@ func antigravityCacheTTL(info *UsageInfo) time.Duration {
 	return apiCacheTTL
 }
 
+// getZhipuUsage 获取智谱/Z.ai 账号（anthropic-zhipu 平台）的用量信息
+// 复用与 getAntigravityUsage 相同的缓存/singleflight/降级模式
+func (s *AccountUsageService) getZhipuUsage(ctx context.Context, account *Account) (*UsageInfo, error) {
+	if s.zhipuQuotaFetcher == nil || !s.zhipuQuotaFetcher.CanFetch(account) {
+		now := time.Now()
+		return &UsageInfo{UpdatedAt: &now}, nil
+	}
+
+	// 1. 检查缓存
+	if cached, ok := s.cache.zhipuCache.Load(account.ID); ok {
+		if cache, ok := cached.(*zhipuUsageCache); ok {
+			ttl := zhipuCacheTTL(cache.usageInfo)
+			if time.Since(cache.timestamp) < ttl {
+				return cache.usageInfo, nil
+			}
+		}
+	}
+
+	// 2. singleflight 防止并发击穿
+	flightKey := fmt.Sprintf("zp-usage:%d", account.ID)
+	result, flightErr, _ := s.cache.zhipuFlight.Do(flightKey, func() (any, error) {
+		// 再次检查缓存（等待期间可能已被填充）
+		if cached, ok := s.cache.zhipuCache.Load(account.ID); ok {
+			if cache, ok := cached.(*zhipuUsageCache); ok {
+				ttl := zhipuCacheTTL(cache.usageInfo)
+				if time.Since(cache.timestamp) < ttl {
+					return cache.usageInfo, nil
+				}
+			}
+		}
+
+		// 使用独立 context，避免调用方 cancel 导致所有共享 flight 的请求失败
+		fetchCtx, fetchCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer fetchCancel()
+
+		proxyURL := s.zhipuQuotaFetcher.GetProxyURL(fetchCtx, account)
+		fetchResult, err := s.zhipuQuotaFetcher.FetchQuota(fetchCtx, account, proxyURL)
+		if err != nil {
+			now := time.Now()
+			degraded := &UsageInfo{
+				UpdatedAt: &now,
+				ErrorCode: errorCodeNetworkError,
+				Error:     fmt.Sprintf("zhipu usage fetch error: %v", err),
+			}
+			s.cache.zhipuCache.Store(account.ID, &zhipuUsageCache{
+				usageInfo: degraded,
+				timestamp: time.Now(),
+			})
+			return degraded, nil
+		}
+
+		s.cache.zhipuCache.Store(account.ID, &zhipuUsageCache{
+			usageInfo: fetchResult.UsageInfo,
+			timestamp: time.Now(),
+		})
+		return fetchResult.UsageInfo, nil
+	})
+
+	if flightErr != nil {
+		return nil, flightErr
+	}
+	usage, ok := result.(*UsageInfo)
+	if !ok || usage == nil {
+		now := time.Now()
+		return &UsageInfo{UpdatedAt: &now}, nil
+	}
+	return usage, nil
+}
+
+// zhipuCacheTTL 根据 UsageInfo 内容决定智谱用量的缓存 TTL
+// 有错误时缓存 1 分钟，成功时缓存 3 分钟
+func zhipuCacheTTL(info *UsageInfo) time.Duration {
+	if info == nil {
+		return antigravityErrorTTL
+	}
+	if info.ErrorCode != "" || info.Error != "" {
+		return antigravityErrorTTL
+	}
+	return apiCacheTTL
+}
+
 // buildAntigravityDegradedUsage 从 FetchQuota 错误构建降级 UsageInfo
 func buildAntigravityDegradedUsage(err error) *UsageInfo {
 	now := time.Now()
@@ -1354,4 +1458,23 @@ func buildGeminiUsageProgress(used, limit int64, resetAt time.Time, tokens int64
 // 用于账号列表页面显示当前窗口费用
 func (s *AccountUsageService) GetAccountWindowStats(ctx context.Context, accountID int64, startTime time.Time) (*usagestats.AccountStats, error) {
 	return s.usageLogRepo.GetAccountWindowStats(ctx, accountID, startTime)
+}
+
+// GetZhipuUsageByPeriod 按指定时间范围查询智谱账号的模型/工具用量
+// 不走缓存，由管理员按需调用
+func (s *AccountUsageService) GetZhipuUsageByPeriod(ctx context.Context, accountID int64, usageType, period string) (any, error) {
+	account, err := s.accountRepo.GetByID(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if account.Platform != "anthropic-zhipu" {
+		return nil, fmt.Errorf("account %d is not an anthropic-zhipu platform account", accountID)
+	}
+	if s.zhipuQuotaFetcher == nil || !s.zhipuQuotaFetcher.CanFetch(account) {
+		return nil, fmt.Errorf("account %d is not configured for zhipu usage fetching", accountID)
+	}
+
+	startTime, endTime := computeZhipuPeriod(period)
+	proxyURL := s.zhipuQuotaFetcher.GetProxyURL(ctx, account)
+	return s.zhipuQuotaFetcher.FetchUsage(ctx, account, proxyURL, usageType, startTime, endTime)
 }

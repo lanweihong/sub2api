@@ -1589,6 +1589,36 @@ func (h *AccountHandler) GetUsage(c *gin.Context) {
 	response.Success(c, usage)
 }
 
+// GetZhipuUsage handles fetching Zhipu model/tool usage by period
+// GET /api/v1/admin/accounts/:id/zhipu-usage?type=model|tool&period=today|7d|30d
+func (h *AccountHandler) GetZhipuUsage(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+
+	usageType := c.DefaultQuery("type", "model")
+	if usageType != "model" && usageType != "tool" {
+		response.BadRequest(c, "Invalid type parameter, must be 'model' or 'tool'")
+		return
+	}
+
+	period := c.DefaultQuery("period", "30d")
+	if period != "today" && period != "7d" && period != "30d" {
+		response.BadRequest(c, "Invalid period parameter, must be 'today', '7d' or '30d'")
+		return
+	}
+
+	result, err := h.accountUsageService.GetZhipuUsageByPeriod(c.Request.Context(), accountID, usageType, period)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, result)
+}
+
 // ClearRateLimit handles clearing account rate limit status
 // POST /api/v1/admin/accounts/:id/clear-rate-limit
 func (h *AccountHandler) ClearRateLimit(c *gin.Context) {

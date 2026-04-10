@@ -489,6 +489,7 @@ var ProviderSet = wire.NewSet(
 	ProvideUsageCleanupService,
 	ProvideDeferredService,
 	NewAntigravityQuotaFetcher,
+	NewZhipuQuotaFetcher,
 	NewUserAttributeService,
 	NewUsageCache,
 	NewTotpService,

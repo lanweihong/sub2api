@@ -833,6 +833,121 @@ export interface AccountUsageInfo {
   error_code?: string
 
   error?: string            // usage 获取失败时的错误信息
+
+  // 智谱/Z.ai 账号（anthropic-zhipu 平台）的用量明细
+  zhipu_detail?: ZhipuUsageDetail
+}
+
+// ZhipuUsageDetail 智谱/Z.ai 账号用量详情（多路聚合结果）
+export interface ZhipuUsageDetail {
+  platform: 'zai' | 'zhipu'
+  start_time: string
+  end_time: string
+  model_usage?: ZhipuModelUsageItem[]
+  tool_usage?: ZhipuToolUsageItem[]
+  monthly_mcp?: ZhipuMonthlyQuota
+}
+
+// ZhipuModelUsageItem 单个模型用量行
+export interface ZhipuModelUsageItem {
+  modelName?: string
+  inputTokens?: number
+  outputTokens?: number
+  totalTokens?: number
+  requestCount?: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
+  date?: string
+}
+
+// ZhipuToolUsageItem 单个工具调用用量行
+export interface ZhipuToolUsageItem {
+  toolName?: string
+  callCount?: number
+  token?: number
+  date?: string
+}
+
+// ----- 智谱时序用量响应类型（model-usage / tool-usage 接口） -----
+
+// ZhipuModelDataItem 单个模型的时序用量数据
+export interface ZhipuModelDataItem {
+  modelName: string
+  sortOrder: number
+  tokensUsage: number[]
+  totalTokens: number
+}
+
+// ZhipuModelSummaryItem 模型汇总行
+export interface ZhipuModelSummaryItem {
+  modelName: string
+  totalTokens: number
+  sortOrder: number
+}
+
+// ZhipuModelTotalUsage 模型总用量
+export interface ZhipuModelTotalUsage {
+  totalModelCallCount: number
+  totalTokensUsage: number
+  modelSummaryList: ZhipuModelSummaryItem[]
+}
+
+// ZhipuModelUsageResponse model-usage 接口的 data 对象
+export interface ZhipuModelUsageResponse {
+  x_time: string[]
+  modelCallCount: number[]
+  tokensUsage: number[]
+  totalUsage: ZhipuModelTotalUsage
+  modelDataList: ZhipuModelDataItem[]
+  modelSummaryList: ZhipuModelSummaryItem[]
+  granularity: string
+}
+
+// ZhipuToolDataItem 单个工具的时序用量数据
+export interface ZhipuToolDataItem {
+  toolName: string
+  sortOrder: number
+  callCount: number[]
+  totalCallCount: number
+}
+
+// ZhipuToolSummaryItem 工具汇总行
+export interface ZhipuToolSummaryItem {
+  toolName: string
+  totalCallCount: number
+  sortOrder: number
+}
+
+// ZhipuToolTotalUsage 工具总用量
+export interface ZhipuToolTotalUsage {
+  totalNetworkSearchCount: number
+  totalWebReadMcpCount: number
+  totalZreadMcpCount: number
+  totalSearchMcpCount: number
+  toolDetails: unknown[]
+  toolSummaryList: ZhipuToolSummaryItem[]
+}
+
+// ZhipuToolUsageResponse tool-usage 接口的 data 对象
+export interface ZhipuToolUsageResponse {
+  x_time: string[]
+  networkSearchCount: number[]
+  webReadMcpCount: number[]
+  zreadMcpCount: number[]
+  totalUsage: ZhipuToolTotalUsage
+  toolDataList: ZhipuToolDataItem[]
+  toolSummaryList: ZhipuToolSummaryItem[]
+  granularity: string
+}
+
+// ZhipuMonthlyQuota 月度 MCP 配额信息
+export interface ZhipuMonthlyQuota {
+  percentage: number
+  currentUsage?: number
+  total?: number
+  remaining?: number
+  next_reset_time?: string
+  usageDetails?: Record<string, unknown>[]
 }
 
 // OpenAI Codex usage snapshot (from response headers)

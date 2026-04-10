@@ -152,7 +152,7 @@ func TestHandleStreamingResponse_CacheTokens(t *testing.T) {
 		_, _ = pw.Write([]byte("data: [DONE]\n\n"))
 	}()
 
-	result, err := svc.handleStreamingResponse(context.Background(), resp, c, &Account{ID: 1}, time.Now(), "model", "model", false)
+	result, err := svc.handleStreamingResponse(context.Background(), resp, c, &Account{ID: 1}, time.Now(), "model", "model", false, 0)
 	_ = pr.Close()
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -179,7 +179,7 @@ func TestHandleStreamingResponse_EmptyStream(t *testing.T) {
 		_ = pw.Close()
 	}()
 
-	result, err := svc.handleStreamingResponse(context.Background(), resp, c, &Account{ID: 1}, time.Now(), "model", "model", false)
+	result, err := svc.handleStreamingResponse(context.Background(), resp, c, &Account{ID: 1}, time.Now(), "model", "model", false, 0)
 	_ = pr.Close()
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "missing terminal event")
@@ -206,7 +206,7 @@ func TestHandleStreamingResponse_SpecialCharactersInJSON(t *testing.T) {
 		_, _ = pw.Write([]byte("data: [DONE]\n\n"))
 	}()
 
-	result, err := svc.handleStreamingResponse(context.Background(), resp, c, &Account{ID: 1}, time.Now(), "model", "model", false)
+	result, err := svc.handleStreamingResponse(context.Background(), resp, c, &Account{ID: 1}, time.Now(), "model", "model", false, 0)
 	_ = pr.Close()
 	require.NoError(t, err)
 	require.NotNil(t, result)

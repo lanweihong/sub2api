@@ -218,6 +218,7 @@
               :today-stats="todayStatsByAccountId[String(row.id)] ?? null"
               :today-stats-loading="todayStatsLoading"
               :manual-refresh-token="usageManualRefreshToken"
+              @view-zhipu-detail="handleViewZhipuDetail"
             />
           </template>
           <template #cell-proxy="{ row }">
@@ -285,6 +286,7 @@
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
+    <ZhipuUsageDetailModal :show="showZhipuDetail" :account="zhipuDetailAccount" :usage="zhipuDetailUsage" @close="showZhipuDetail = false" />
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
     <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" />
     <SyncFromCrsModal :show="showSync" @close="showSync = false" @synced="reload" />
@@ -304,43 +306,44 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, toRaw, watch } from 'vue'
-import { useIntervalFn } from '@vueuse/core'
-import { useI18n } from 'vue-i18n'
-import { useAppStore } from '@/stores/app'
-import { useAuthStore } from '@/stores/auth'
 import { adminAPI } from '@/api/admin'
-import { useTableLoader } from '@/composables/useTableLoader'
-import { useSwipeSelect } from '@/composables/useSwipeSelect'
-import { useTableSelection } from '@/composables/useTableSelection'
-import AppLayout from '@/components/layout/AppLayout.vue'
-import TablePageLayout from '@/components/layout/TablePageLayout.vue'
-import DataTable from '@/components/common/DataTable.vue'
-import Pagination from '@/components/common/Pagination.vue'
-import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import { CreateAccountModal, EditAccountModal, BulkEditAccountModal, SyncFromCrsModal, TempUnschedStatusModal } from '@/components/account'
+import { BulkEditAccountModal, CreateAccountModal, EditAccountModal, SyncFromCrsModal, TempUnschedStatusModal } from '@/components/account'
+import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
+import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
+import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.vue'
+import AccountTodayStatsCell from '@/components/account/AccountTodayStatsCell.vue'
+import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
+import AccountActionMenu from '@/components/admin/account/AccountActionMenu.vue'
+import AccountBulkActionsBar from '@/components/admin/account/AccountBulkActionsBar.vue'
+import AccountStatsModal from '@/components/admin/account/AccountStatsModal.vue'
 import AccountTableActions from '@/components/admin/account/AccountTableActions.vue'
 import AccountTableFilters from '@/components/admin/account/AccountTableFilters.vue'
-import AccountBulkActionsBar from '@/components/admin/account/AccountBulkActionsBar.vue'
-import AccountActionMenu from '@/components/admin/account/AccountActionMenu.vue'
+import AccountTestModal from '@/components/admin/account/AccountTestModal.vue'
 import ImportDataModal from '@/components/admin/account/ImportDataModal.vue'
 import ReAuthAccountModal from '@/components/admin/account/ReAuthAccountModal.vue'
-import AccountTestModal from '@/components/admin/account/AccountTestModal.vue'
-import AccountStatsModal from '@/components/admin/account/AccountStatsModal.vue'
 import ScheduledTestsPanel from '@/components/admin/account/ScheduledTestsPanel.vue'
-import type { SelectOption } from '@/components/common/Select.vue'
-import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.vue'
-import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
-import AccountTodayStatsCell from '@/components/account/AccountTodayStatsCell.vue'
-import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
-import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
-import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
-import Icon from '@/components/icons/Icon.vue'
+import ZhipuUsageDetailModal from '@/components/admin/account/ZhipuUsageDetailModal.vue'
 import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRulesModal.vue'
 import TLSFingerprintProfilesModal from '@/components/admin/TLSFingerprintProfilesModal.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import DataTable from '@/components/common/DataTable.vue'
+import Pagination from '@/components/common/Pagination.vue'
+import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
+import type { SelectOption } from '@/components/common/Select.vue'
+import Icon from '@/components/icons/Icon.vue'
+import AppLayout from '@/components/layout/AppLayout.vue'
+import TablePageLayout from '@/components/layout/TablePageLayout.vue'
+import { useSwipeSelect } from '@/composables/useSwipeSelect'
+import { useTableLoader } from '@/composables/useTableLoader'
+import { useTableSelection } from '@/composables/useTableSelection'
+import { useAppStore } from '@/stores/app'
+import { useAuthStore } from '@/stores/auth'
+import type { Account, AccountPlatform, Proxy as AccountProxy, AccountType, AccountUsageInfo, AdminGroup, ClaudeModel, WindowStats } from '@/types'
 import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { formatDateTime, formatRelativeTime } from '@/utils/format'
-import type { Account, AccountPlatform, AccountType, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel } from '@/types'
+import { useIntervalFn } from '@vueuse/core'
+import { computed, onMounted, onUnmounted, reactive, ref, toRaw, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -385,6 +388,9 @@ const deletingAcc = ref<Account | null>(null)
 const reAuthAcc = ref<Account | null>(null)
 const testingAcc = ref<Account | null>(null)
 const statsAcc = ref<Account | null>(null)
+const showZhipuDetail = ref(false)
+const zhipuDetailAccount = ref<Account | null>(null)
+const zhipuDetailUsage = ref<AccountUsageInfo | null>(null)
 const showSchedulePanel = ref(false)
 const scheduleAcc = ref<Account | null>(null)
 const scheduleModelOptions = ref<SelectOption[]>([])
@@ -1209,6 +1215,11 @@ const handleExportData = async () => {
 const closeTestModal = () => { showTest.value = false; testingAcc.value = null }
 const closeStatsModal = () => { showStats.value = false; statsAcc.value = null }
 const closeReAuthModal = () => { showReAuth.value = false; reAuthAcc.value = null }
+const handleViewZhipuDetail = (payload: { account: Account; usage: AccountUsageInfo }) => {
+  zhipuDetailAccount.value = payload.account
+  zhipuDetailUsage.value = payload.usage
+  showZhipuDetail.value = true
+}
 const handleTest = (a: Account) => { testingAcc.value = a; showTest.value = true }
 const handleViewStats = (a: Account) => { statsAcc.value = a; showStats.value = true }
 const handleSchedule = async (a: Account) => {

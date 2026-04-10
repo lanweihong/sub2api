@@ -3,22 +3,24 @@
  * Handles AI platform account management for administrators
  */
 
-import { apiClient } from '../client'
 import type {
-  Account,
-  CreateAccountRequest,
-  UpdateAccountRequest,
-  PaginatedResponse,
-  AccountUsageInfo,
-  WindowStats,
-  ClaudeModel,
-  AccountUsageStatsResponse,
-  TempUnschedulableStatus,
-  AdminDataPayload,
-  AdminDataImportResult,
-  CheckMixedChannelRequest,
-  CheckMixedChannelResponse
+    Account,
+    AccountUsageInfo,
+    AccountUsageStatsResponse,
+    AdminDataImportResult,
+    AdminDataPayload,
+    CheckMixedChannelRequest,
+    CheckMixedChannelResponse,
+    ClaudeModel,
+    CreateAccountRequest,
+    PaginatedResponse,
+    TempUnschedulableStatus,
+    UpdateAccountRequest,
+    WindowStats,
+    ZhipuModelUsageResponse,
+    ZhipuToolUsageResponse
 } from '@/types'
+import { apiClient } from '../client'
 
 /**
  * List all accounts with pagination
@@ -637,6 +639,25 @@ export async function setPrivacy(id: number): Promise<Account> {
   return data
 }
 
+/**
+ * Get Zhipu account model/tool usage by period
+ * @param id - Account ID
+ * @param type - Usage type: 'model' or 'tool'
+ * @param period - Time period: 'today', '7d', or '30d'
+ * @returns Model or tool usage response object
+ */
+export async function getZhipuUsage(
+  id: number,
+  type: 'model' | 'tool',
+  period: 'today' | '7d' | '30d'
+): Promise<ZhipuModelUsageResponse | ZhipuToolUsageResponse> {
+  const { data } = await apiClient.get<ZhipuModelUsageResponse | ZhipuToolUsageResponse>(
+    `/admin/accounts/${id}/zhipu-usage`,
+    { params: { type, period } }
+  )
+  return data
+}
+
 export const accountsAPI = {
   list,
   listWithEtag,
@@ -674,7 +695,8 @@ export const accountsAPI = {
   getAntigravityDefaultModelMapping,
   batchClearError,
   batchRefresh,
-  setPrivacy
+  setPrivacy,
+  getZhipuUsage
 }
 
 export default accountsAPI

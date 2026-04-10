@@ -265,6 +265,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		accounts.GET("/:id/stats", h.Admin.Account.GetStats)
 		accounts.POST("/:id/clear-error", h.Admin.Account.ClearError)
 		accounts.GET("/:id/usage", h.Admin.Account.GetUsage)
+		accounts.GET("/:id/zhipu-usage", h.Admin.Account.GetZhipuUsage)
 		accounts.GET("/:id/today-stats", h.Admin.Account.GetTodayStats)
 		accounts.POST("/today-stats/batch", h.Admin.Account.GetBatchTodayStats)
 		accounts.POST("/:id/clear-rate-limit", h.Admin.Account.ClearRateLimit)

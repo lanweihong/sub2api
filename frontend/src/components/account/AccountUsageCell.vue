@@ -364,6 +364,66 @@
       </div>
     </template>
 
+    <!-- Zhipu (anthropic-zhipu) accounts: fetch usage from API -->
+    <template v-else-if="account.platform === 'anthropic-zhipu'">
+      <!-- Loading state -->
+      <div v-if="loading" class="space-y-1.5">
+        <div class="flex items-center gap-1">
+          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
+        </div>
+      </div>
+
+      <!-- Error state -->
+      <div v-else-if="error" class="text-xs text-red-500">
+        {{ error }}
+      </div>
+
+      <!-- Usage data -->
+      <div v-else-if="usageInfo" class="space-y-1">
+        <!-- API error (degraded response) -->
+        <div
+          v-if="usageInfo.error"
+          class="text-xs text-amber-600 dark:text-amber-400 truncate max-w-[200px]"
+          :title="usageInfo.error"
+        >
+          {{ usageInfo.error }}
+        </div>
+
+        <!-- 5h Token window -->
+        <UsageProgressBar
+          v-if="usageInfo.five_hour"
+          label="5h"
+          :utilization="usageInfo.five_hour.utilization"
+          :resets-at="usageInfo.five_hour.resets_at"
+          color="indigo"
+        />
+
+        <!-- 7d Token window -->
+        <UsageProgressBar
+          v-if="usageInfo.seven_day"
+          label="7d"
+          :utilization="usageInfo.seven_day.utilization"
+          :resets-at="usageInfo.seven_day.resets_at"
+          color="emerald"
+        />
+
+        <!-- Detail button -->
+        <button
+          v-if="usageInfo.zhipu_detail"
+          type="button"
+          class="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[9px] font-medium text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-colors"
+          @click="emit('view-zhipu-detail', { account: props.account, usage: usageInfo! })"
+        >
+          {{ t('admin.accounts.zhipuUsage.detail') }}
+        </button>
+      </div>
+
+      <!-- No data yet -->
+      <div v-else class="text-xs text-gray-400">-</div>
+    </template>
+
     <!-- Other accounts: no usage window -->
     <template v-else>
       <div class="text-xs text-gray-400">-</div>
@@ -439,14 +499,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type { Account, AccountUsageInfo, GeminiCredentials, WindowStats } from '@/types'
 import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { formatCompactNumber } from '@/utils/format'
-import UsageProgressBar from './UsageProgressBar.vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AccountQuotaInfo from './AccountQuotaInfo.vue'
+import UsageProgressBar from './UsageProgressBar.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -462,6 +522,10 @@ const props = withDefaults(
   }
 )
 
+const emit = defineEmits<{
+  (e: 'view-zhipu-detail', payload: { account: Account; usage: AccountUsageInfo }): void
+}>()
+
 const { t } = useI18n()
 
 const loading = ref(false)
@@ -473,6 +537,8 @@ const usageInfo = ref<AccountUsageInfo | null>(null)
 const showUsageWindows = computed(() => {
   // Gemini: we can always compute local usage windows from DB logs (simulated quotas).
   if (props.account.platform === 'gemini') return true
+  // Zhipu: always show usage section
+  if (props.account.platform === 'anthropic-zhipu') return true
   return props.account.type === 'oauth' || props.account.type === 'setup-token'
 })
 
@@ -488,6 +554,9 @@ const shouldFetchUsage = computed(() => {
   }
   if (props.account.platform === 'openai') {
     return props.account.type === 'oauth'
+  }
+  if (props.account.platform === 'anthropic-zhipu') {
+    return true
   }
   return false
 })

@@ -2865,7 +2865,46 @@ export default {
       linkCopied: 'Link Copied',
       needsReauth: 'Re-auth Required',
       rateLimited: 'Rate Limited',
-      usageError: 'Fetch Error'
+      usageError: 'Fetch Error',
+      zhipuUsage: {
+        detail: 'View Details',
+        modelUsage: 'Model Usage',
+        toolUsage: 'Tool Usage',
+        quota: 'Quota',
+        fiveHourToken: '5h Token',
+        weeklyToken: '7d Token',
+        monthlyMcp: 'Monthly MCP',
+        fiveHourQuota: '5h Quota',
+        weeklyQuota: 'Weekly Quota',
+        monthlyQuota: 'MCP Monthly Quota',
+        used: 'Used',
+        resetTime: 'Resets at',
+        today: 'Today',
+        last7Days: 'Last 7 Days',
+        last30Days: 'Last 30 Days',
+        totalTokenConsumption: 'Total Token Consumption',
+        totalToolCalls: 'Total Tool Calls',
+        consumption: 'consumption',
+        calls: 'calls',
+        platform: {
+          zai: 'Z.ai',
+          zhipu: 'Zhipu'
+        },
+        timeRange: 'Time Range',
+        noData: 'No Data',
+        columns: {
+          modelName: 'Model Name',
+          inputTokens: 'Input Tokens',
+          outputTokens: 'Output Tokens',
+          totalTokens: 'Total Tokens',
+          requestCount: 'Request Count',
+          cacheReadTokens: 'Cache Read',
+          cacheWriteTokens: 'Cache Write',
+          toolName: 'Tool Name',
+          callCount: 'Call Count',
+          token: 'Token Usage'
+        }
+      }
     },
 
     // Scheduled Tests
