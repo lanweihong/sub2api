@@ -63,6 +63,17 @@ type APIKey struct {
 
 	User  *User  `json:"user,omitempty"`
 	Group *Group `json:"group,omitempty"`
+
+	// Multi-group bindings
+	BoundGroups []APIKeyBoundGroup `json:"bound_groups,omitempty"`
+}
+
+// APIKeyBoundGroup represents a group bound to an API key in a multi-group configuration.
+type APIKeyBoundGroup struct {
+	GroupID       int64    `json:"group_id"`
+	Priority      int      `json:"priority"`
+	ModelPatterns []string `json:"model_patterns,omitempty"`
+	Group         *Group   `json:"group,omitempty"`
 }
 
 type Group struct {

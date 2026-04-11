@@ -30,13 +30,14 @@ func NewAPIKeyHandler(apiKeyService *service.APIKeyService) *APIKeyHandler {
 
 // CreateAPIKeyRequest represents the create API key request payload
 type CreateAPIKeyRequest struct {
-	Name          string   `json:"name" binding:"required"`
-	GroupID       *int64   `json:"group_id"`        // nullable
-	CustomKey     *string  `json:"custom_key"`      // 可选的自定义key
-	IPWhitelist   []string `json:"ip_whitelist"`    // IP 白名单
-	IPBlacklist   []string `json:"ip_blacklist"`    // IP 黑名单
-	Quota         *float64 `json:"quota"`           // 配额限制 (USD)
-	ExpiresInDays *int     `json:"expires_in_days"` // 过期天数
+	Name          string                       `json:"name" binding:"required"`
+	GroupID       *int64                       `json:"group_id"`        // nullable
+	CustomKey     *string                      `json:"custom_key"`      // 可选的自定义key
+	IPWhitelist   []string                     `json:"ip_whitelist"`    // IP 白名单
+	IPBlacklist   []string                     `json:"ip_blacklist"`    // IP 黑名单
+	Quota         *float64                     `json:"quota"`           // 配额限制 (USD)
+	ExpiresInDays *int                         `json:"expires_in_days"` // 过期天数
+	BoundGroups   []service.APIKeyGroupBinding `json:"bound_groups,omitempty"`
 
 	// Rate limit fields (0 = unlimited)
 	RateLimit5h *float64 `json:"rate_limit_5h"`
@@ -46,14 +47,15 @@ type CreateAPIKeyRequest struct {
 
 // UpdateAPIKeyRequest represents the update API key request payload
 type UpdateAPIKeyRequest struct {
-	Name        string   `json:"name"`
-	GroupID     *int64   `json:"group_id"`
-	Status      string   `json:"status" binding:"omitempty,oneof=active inactive"`
-	IPWhitelist []string `json:"ip_whitelist"` // IP 白名单
-	IPBlacklist []string `json:"ip_blacklist"` // IP 黑名单
-	Quota       *float64 `json:"quota"`        // 配额限制 (USD), 0=无限制
-	ExpiresAt   *string  `json:"expires_at"`   // 过期时间 (ISO 8601)
-	ResetQuota  *bool    `json:"reset_quota"`  // 重置已用配额
+	Name        string                        `json:"name"`
+	GroupID     *int64                        `json:"group_id"`
+	Status      string                        `json:"status" binding:"omitempty,oneof=active inactive"`
+	IPWhitelist []string                      `json:"ip_whitelist"` // IP 白名单
+	IPBlacklist []string                      `json:"ip_blacklist"` // IP 黑名单
+	Quota       *float64                      `json:"quota"`        // 配额限制 (USD), 0=无限制
+	ExpiresAt   *string                       `json:"expires_at"`   // 过期时间 (ISO 8601)
+	ResetQuota  *bool                         `json:"reset_quota"`  // 重置已用配额
+	BoundGroups *[]service.APIKeyGroupBinding `json:"bound_groups,omitempty"` // nil=不变, []=清空, [...]= 替换
 
 	// Rate limit fields (nil = no change, 0 = unlimited)
 	RateLimit5h         *float64 `json:"rate_limit_5h"`
@@ -155,6 +157,7 @@ func (h *APIKeyHandler) Create(c *gin.Context) {
 		IPWhitelist:   req.IPWhitelist,
 		IPBlacklist:   req.IPBlacklist,
 		ExpiresInDays: req.ExpiresInDays,
+		BoundGroups:   req.BoundGroups,
 	}
 	if req.Quota != nil {
 		svcReq.Quota = *req.Quota
@@ -208,6 +211,7 @@ func (h *APIKeyHandler) Update(c *gin.Context) {
 		RateLimit1d:         req.RateLimit1d,
 		RateLimit7d:         req.RateLimit7d,
 		ResetRateLimitUsage: req.ResetRateLimitUsage,
+		BoundGroups:         req.BoundGroups,
 	}
 	if req.Name != "" {
 		svcReq.Name = &req.Name
@@ -303,4 +307,84 @@ func (h *APIKeyHandler) GetUserGroupRates(c *gin.Context) {
 	}
 
 	response.Success(c, rates)
+}
+
+// SetBoundGroups replaces all multi-group bindings for an API key.
+// PUT /api/v1/api-keys/:id/bound-groups
+func (h *APIKeyHandler) SetBoundGroups(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid API key ID")
+		return
+	}
+
+	var req struct {
+		BoundGroups []service.APIKeyGroupBinding `json:"bound_groups" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request body: "+err.Error())
+		return
+	}
+
+	if err := h.apiKeyService.SetBoundGroups(c.Request.Context(), subject.UserID, id, req.BoundGroups); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	// Return the updated bindings
+	groups, err := h.apiKeyService.GetBoundGroups(c.Request.Context(), subject.UserID, id)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	out := make([]dto.APIKeyBoundGroup, len(groups))
+	for i, bg := range groups {
+		out[i] = dto.APIKeyBoundGroup{
+			GroupID:       bg.GroupID,
+			Priority:      bg.Priority,
+			ModelPatterns: bg.ModelPatterns,
+			Group:         dto.GroupFromServiceShallow(bg.Group),
+		}
+	}
+	response.Success(c, out)
+}
+
+// GetBoundGroups returns the multi-group bindings for an API key.
+// GET /api/v1/api-keys/:id/bound-groups
+func (h *APIKeyHandler) GetBoundGroups(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid API key ID")
+		return
+	}
+
+	groups, err := h.apiKeyService.GetBoundGroups(c.Request.Context(), subject.UserID, id)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	out := make([]dto.APIKeyBoundGroup, len(groups))
+	for i, bg := range groups {
+		out[i] = dto.APIKeyBoundGroup{
+			GroupID:       bg.GroupID,
+			Priority:      bg.Priority,
+			ModelPatterns: bg.ModelPatterns,
+			Group:         dto.GroupFromServiceShallow(bg.Group),
+		}
+	}
+	response.Success(c, out)
 }

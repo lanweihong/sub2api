@@ -110,6 +110,11 @@ func RequireGroupAssignment(settingService *service.SettingService, writeError G
 			c.Next()
 			return
 		}
+		// 多分组 Key 允许通过（分组将在 handler 层按模型动态解析）
+		if IsMultiGroupDeferred(c) {
+			c.Next()
+			return
+		}
 		// 未分组 Key — 检查系统设置
 		if settingService.IsUngroupedKeySchedulingAllowed(c.Request.Context()) {
 			c.Next()

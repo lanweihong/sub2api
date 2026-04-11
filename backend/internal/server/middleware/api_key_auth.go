@@ -118,7 +118,12 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 				Concurrency: apiKey.User.Concurrency,
 			})
 			c.Set(string(ContextKeyUserRole), apiKey.User.Role)
-			setGroupContext(c, apiKey.Group)
+			if apiKey.HasBoundGroups() {
+				ctx := context.WithValue(c.Request.Context(), ctxkey.MultiGroupDeferred, true)
+				c.Request = c.Request.WithContext(ctx)
+			} else {
+				setGroupContext(c, apiKey.Group)
+			}
 			_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
 			c.Next()
 			return
@@ -129,10 +134,13 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		// skipBilling: /v1/usage 只需鉴权，跳过所有计费执行
 		skipBilling := c.Request.URL.Path == "/v1/usage"
 
+		// Multi-group keys: defer group context to handler layer after model is known.
+		isMultiGroup := apiKey.HasBoundGroups()
+
 		var subscription *service.UserSubscription
 		isSubscriptionType := apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
 
-		if isSubscriptionType && subscriptionService != nil {
+		if isSubscriptionType && !isMultiGroup && subscriptionService != nil {
 			sub, subErr := subscriptionService.GetActiveSubscription(
 				c.Request.Context(),
 				apiKey.User.ID,
@@ -213,7 +221,13 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			Concurrency: apiKey.User.Concurrency,
 		})
 		c.Set(string(ContextKeyUserRole), apiKey.User.Role)
-		setGroupContext(c, apiKey.Group)
+		if isMultiGroup {
+			// Multi-group: defer group resolution to handler (after model is known)
+			ctx := context.WithValue(c.Request.Context(), ctxkey.MultiGroupDeferred, true)
+			c.Request = c.Request.WithContext(ctx)
+		} else {
+			setGroupContext(c, apiKey.Group)
+		}
 		_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
 
 		c.Next()
@@ -249,4 +263,17 @@ func setGroupContext(c *gin.Context, group *service.Group) {
 	}
 	ctx := context.WithValue(c.Request.Context(), ctxkey.Group, group)
 	c.Request = c.Request.WithContext(ctx)
+}
+
+// SetGroupContext is the exported version of setGroupContext, used by the gateway handler
+// to set the resolved group for multi-group API keys after model-based resolution.
+func SetGroupContext(c *gin.Context, group *service.Group) {
+	setGroupContext(c, group)
+}
+
+// IsMultiGroupDeferred returns true if the current request's API key is a multi-group key
+// and group resolution has been deferred to the handler layer.
+func IsMultiGroupDeferred(c *gin.Context) bool {
+	val, ok := c.Request.Context().Value(ctxkey.MultiGroupDeferred).(bool)
+	return ok && val
 }

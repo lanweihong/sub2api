@@ -98,6 +98,18 @@ func APIKeyFromService(k *service.APIKey) *APIKey {
 		User:          UserFromServiceShallow(k.User),
 		Group:         GroupFromServiceShallow(k.Group),
 	}
+	// Map bound groups for multi-group keys
+	if len(k.BoundGroups) > 0 {
+		out.BoundGroups = make([]APIKeyBoundGroup, len(k.BoundGroups))
+		for i, bg := range k.BoundGroups {
+			out.BoundGroups[i] = APIKeyBoundGroup{
+				GroupID:       bg.GroupID,
+				Priority:      bg.Priority,
+				ModelPatterns: bg.ModelPatterns,
+				Group:         GroupFromServiceShallow(bg.Group),
+			}
+		}
+	}
 	if k.Window5hStart != nil && !service.IsWindowExpired(k.Window5hStart, service.RateLimitWindow5h) {
 		t := k.Window5hStart.Add(service.RateLimitWindow5h)
 		out.Reset5hAt = &t

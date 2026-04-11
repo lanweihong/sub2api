@@ -8,6 +8,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
+	"github.com/Wei-Shaw/sub2api/ent/apikeygroup"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
 	"github.com/Wei-Shaw/sub2api/ent/user"
@@ -71,6 +72,10 @@ func (r *apiKeyRepository) GetByID(ctx context.Context, id int64) (*service.APIK
 		Where(apikey.IDEQ(id)).
 		WithUser().
 		WithGroup().
+		WithAPIKeyGroups(func(q *dbent.APIKeyGroupQuery) {
+			q.Order(dbent.Asc(apikeygroup.FieldPriority)).
+				WithGroup()
+		}).
 		Only(ctx)
 	if err != nil {
 		if dbent.IsNotFound(err) {
@@ -105,6 +110,10 @@ func (r *apiKeyRepository) GetByKey(ctx context.Context, key string) (*service.A
 		Where(apikey.KeyEQ(key)).
 		WithUser().
 		WithGroup().
+		WithAPIKeyGroups(func(q *dbent.APIKeyGroupQuery) {
+			q.Order(dbent.Asc(apikeygroup.FieldPriority)).
+				WithGroup()
+		}).
 		Only(ctx)
 	if err != nil {
 		if dbent.IsNotFound(err) {
@@ -169,6 +178,38 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 				group.FieldAllowMessagesDispatch,
 				group.FieldDefaultMappedModel,
 			)
+		}).
+		WithAPIKeyGroups(func(q *dbent.APIKeyGroupQuery) {
+			q.Order(dbent.Asc(apikeygroup.FieldPriority)).
+				WithGroup(func(gq *dbent.GroupQuery) {
+					gq.Select(
+						group.FieldID,
+						group.FieldName,
+						group.FieldPlatform,
+						group.FieldStatus,
+						group.FieldSubscriptionType,
+						group.FieldRateMultiplier,
+						group.FieldDailyLimitUsd,
+						group.FieldWeeklyLimitUsd,
+						group.FieldMonthlyLimitUsd,
+						group.FieldImagePrice1k,
+						group.FieldImagePrice2k,
+						group.FieldImagePrice4k,
+						group.FieldSoraImagePrice360,
+						group.FieldSoraImagePrice540,
+						group.FieldSoraVideoPricePerRequest,
+						group.FieldSoraVideoPricePerRequestHd,
+						group.FieldClaudeCodeOnly,
+						group.FieldFallbackGroupID,
+						group.FieldFallbackGroupIDOnInvalidRequest,
+						group.FieldModelRoutingEnabled,
+						group.FieldModelRouting,
+						group.FieldMcpXMLInject,
+						group.FieldSupportedModelScopes,
+						group.FieldAllowMessagesDispatch,
+						group.FieldDefaultMappedModel,
+					)
+				})
 		}).
 		Only(ctx)
 	if err != nil {
@@ -302,9 +343,17 @@ func (r *apiKeyRepository) ListByUserID(ctx context.Context, userID int64, param
 	}
 	if filters.GroupID != nil {
 		if *filters.GroupID == 0 {
-			q = q.Where(apikey.GroupIDIsNil())
+			// "无分组" = group_id IS NULL 且没有 api_key_groups 绑定
+			q = q.Where(apikey.And(
+				apikey.GroupIDIsNil(),
+				apikey.Not(apikey.HasAPIKeyGroups()),
+			))
 		} else {
-			q = q.Where(apikey.GroupIDEQ(*filters.GroupID))
+			// 指定分组 = 旧 group_id 或 api_key_groups 绑定
+			q = q.Where(apikey.Or(
+				apikey.GroupIDEQ(*filters.GroupID),
+				apikey.HasAPIKeyGroupsWith(apikeygroup.GroupIDEQ(*filters.GroupID)),
+			))
 		}
 	}
 
@@ -315,6 +364,10 @@ func (r *apiKeyRepository) ListByUserID(ctx context.Context, userID int64, param
 
 	keys, err := q.
 		WithGroup().
+		WithAPIKeyGroups(func(q *dbent.APIKeyGroupQuery) {
+			q.Order(dbent.Asc(apikeygroup.FieldPriority)).
+				WithGroup()
+		}).
 		Offset(params.Offset()).
 		Limit(params.Limit()).
 		Order(dbent.Desc(apikey.FieldID)).
@@ -356,7 +409,12 @@ func (r *apiKeyRepository) ExistsByKey(ctx context.Context, key string) (bool, e
 }
 
 func (r *apiKeyRepository) ListByGroupID(ctx context.Context, groupID int64, params pagination.PaginationParams) ([]service.APIKey, *pagination.PaginationResult, error) {
-	q := r.activeQuery().Where(apikey.GroupIDEQ(groupID))
+	q := r.activeQuery().Where(
+		apikey.Or(
+			apikey.GroupIDEQ(groupID),
+			apikey.HasAPIKeyGroupsWith(apikeygroup.GroupIDEQ(groupID)),
+		),
+	)
 
 	total, err := q.Count(ctx)
 	if err != nil {
@@ -423,9 +481,14 @@ func (r *apiKeyRepository) UpdateGroupIDByUserAndGroup(ctx context.Context, user
 	return int64(n), err
 }
 
-// CountByGroupID 获取分组的 API Key 数量
+// CountByGroupID 获取分组的 API Key 数量（包含旧 group_id 和 api_key_groups 绑定）
 func (r *apiKeyRepository) CountByGroupID(ctx context.Context, groupID int64) (int64, error) {
-	count, err := r.activeQuery().Where(apikey.GroupIDEQ(groupID)).Count(ctx)
+	count, err := r.activeQuery().Where(
+		apikey.Or(
+			apikey.GroupIDEQ(groupID),
+			apikey.HasAPIKeyGroupsWith(apikeygroup.GroupIDEQ(groupID)),
+		),
+	).Count(ctx)
 	return int64(count), err
 }
 
@@ -442,7 +505,12 @@ func (r *apiKeyRepository) ListKeysByUserID(ctx context.Context, userID int64) (
 
 func (r *apiKeyRepository) ListKeysByGroupID(ctx context.Context, groupID int64) ([]string, error) {
 	keys, err := r.activeQuery().
-		Where(apikey.GroupIDEQ(groupID)).
+		Where(
+			apikey.Or(
+				apikey.GroupIDEQ(groupID),
+				apikey.HasAPIKeyGroupsWith(apikeygroup.GroupIDEQ(groupID)),
+			),
+		).
 		Select(apikey.FieldKey).
 		Strings(ctx)
 	if err != nil {
@@ -600,6 +668,22 @@ func apiKeyEntityToService(m *dbent.APIKey) *service.APIKey {
 	if m.Edges.Group != nil {
 		out.Group = groupEntityToService(m.Edges.Group)
 	}
+	if len(m.Edges.APIKeyGroups) > 0 {
+		out.BoundGroups = make([]service.APIKeyGroup, 0, len(m.Edges.APIKeyGroups))
+		for _, akg := range m.Edges.APIKeyGroups {
+			bg := service.APIKeyGroup{
+				APIKeyID:      akg.APIKeyID,
+				GroupID:       akg.GroupID,
+				Priority:      akg.Priority,
+				ModelPatterns: akg.ModelPatterns,
+				CreatedAt:     akg.CreatedAt,
+			}
+			if akg.Edges.Group != nil {
+				bg.Group = groupEntityToService(akg.Edges.Group)
+			}
+			out.BoundGroups = append(out.BoundGroups, bg)
+		}
+	}
 	return out
 }
 
@@ -675,4 +759,91 @@ func derefString(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// SetBoundGroups replaces all bound groups for an API key with the provided bindings.
+// It deletes all existing bindings and creates new ones in a single transaction.
+func (r *apiKeyRepository) SetBoundGroups(ctx context.Context, apiKeyID int64, bindings []service.APIKeyGroupBinding) error {
+	tx, err := r.client.Tx(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	// Delete all existing bindings for this API key
+	_, err = tx.APIKeyGroup.Delete().
+		Where(apikeygroup.APIKeyID(apiKeyID)).
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("delete existing bindings: %w", err)
+	}
+
+	// Create new bindings
+	builders := make([]*dbent.APIKeyGroupCreate, 0, len(bindings))
+	for _, b := range bindings {
+		builder := tx.APIKeyGroup.Create().
+			SetAPIKeyID(apiKeyID).
+			SetGroupID(b.GroupID).
+			SetPriority(b.Priority)
+		if len(b.ModelPatterns) > 0 {
+			builder.SetModelPatterns(b.ModelPatterns)
+		}
+		builders = append(builders, builder)
+	}
+	if len(builders) > 0 {
+		_, err = tx.APIKeyGroup.CreateBulk(builders...).Save(ctx)
+		if err != nil {
+			return fmt.Errorf("create bindings: %w", err)
+		}
+	}
+
+	return tx.Commit()
+}
+
+// GetBoundGroups returns all bound groups for an API key, ordered by priority.
+func (r *apiKeyRepository) GetBoundGroups(ctx context.Context, apiKeyID int64) ([]service.APIKeyGroup, error) {
+	rows, err := r.client.APIKeyGroup.Query().
+		Where(apikeygroup.APIKeyID(apiKeyID)).
+		Order(dbent.Asc(apikeygroup.FieldPriority)).
+		WithGroup().
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query bound groups: %w", err)
+	}
+
+	result := make([]service.APIKeyGroup, len(rows))
+	for i, row := range rows {
+		result[i] = service.APIKeyGroup{
+			APIKeyID:      row.APIKeyID,
+			GroupID:       row.GroupID,
+			Priority:      row.Priority,
+			ModelPatterns: row.ModelPatterns,
+			CreatedAt:     row.CreatedAt,
+		}
+		if row.Edges.Group != nil {
+			g := groupEntityToService(row.Edges.Group)
+			result[i].Group = g
+		}
+	}
+	return result, nil
+}
+
+// MigrateBoundGroupsByUserAndGroup 将用户下 api_key_groups 中绑定 oldGroupID 的记录迁移到 newGroupID
+func (r *apiKeyRepository) MigrateBoundGroupsByUserAndGroup(ctx context.Context, userID, oldGroupID, newGroupID int64) (int64, error) {
+	client := clientFromContext(ctx, r.client)
+	n, err := client.APIKeyGroup.Update().
+		Where(
+			apikeygroup.GroupIDEQ(oldGroupID),
+			apikeygroup.HasAPIKeyWith(
+				apikey.UserIDEQ(userID),
+				apikey.DeletedAtIsNil(),
+			),
+		).
+		SetGroupID(newGroupID).
+		Save(ctx)
+	return int64(n), err
 }

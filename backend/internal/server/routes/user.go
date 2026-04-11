@@ -46,6 +46,10 @@ func RegisterUserRoutes(
 			keys.POST("", h.APIKey.Create)
 			keys.PUT("/:id", h.APIKey.Update)
 			keys.DELETE("/:id", h.APIKey.Delete)
+
+			// Multi-group bindings
+			keys.GET("/:id/bound-groups", h.APIKey.GetBoundGroups)
+			keys.PUT("/:id/bound-groups", h.APIKey.SetBoundGroups)
 		}
 
 		// 用户可用分组（非管理员接口）

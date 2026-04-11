@@ -77,6 +77,14 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 	reqStream := gjson.GetBytes(body, "stream").Bool()
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
 
+	// 多分组 Key：根据请求模型动态解析目标分组
+	apiKey, err = resolveMultiGroupIfNeeded(c, apiKey, reqModel)
+	if err != nil {
+		reqLog.Warn("gateway.responses.multi_group_resolve_failed", zap.Error(err))
+		h.responsesErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "No group matches the requested model: "+reqModel)
+		return
+	}
+
 	setOpsRequestContext(c, reqModel, reqStream, body)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
 

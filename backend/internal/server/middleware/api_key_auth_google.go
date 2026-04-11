@@ -1,10 +1,12 @@
 package middleware
 
 import (
+	"context"
 	"errors"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/googleapi"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -63,14 +65,20 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 				Concurrency: apiKey.User.Concurrency,
 			})
 			c.Set(string(ContextKeyUserRole), apiKey.User.Role)
-			setGroupContext(c, apiKey.Group)
+			if apiKey.HasBoundGroups() {
+				ctx := context.WithValue(c.Request.Context(), ctxkey.MultiGroupDeferred, true)
+				c.Request = c.Request.WithContext(ctx)
+			} else {
+				setGroupContext(c, apiKey.Group)
+			}
 			_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
 			c.Next()
 			return
 		}
 
+		isMultiGroup := apiKey.HasBoundGroups()
 		isSubscriptionType := apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
-		if isSubscriptionType && subscriptionService != nil {
+		if isSubscriptionType && !isMultiGroup && subscriptionService != nil {
 			subscription, err := subscriptionService.GetActiveSubscription(
 				c.Request.Context(),
 				apiKey.User.ID,
@@ -112,7 +120,12 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 			Concurrency: apiKey.User.Concurrency,
 		})
 		c.Set(string(ContextKeyUserRole), apiKey.User.Role)
-		setGroupContext(c, apiKey.Group)
+		if isMultiGroup {
+			ctx := context.WithValue(c.Request.Context(), ctxkey.MultiGroupDeferred, true)
+			c.Request = c.Request.WithContext(ctx)
+		} else {
+			setGroupContext(c, apiKey.Group)
+		}
 		_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
 		c.Next()
 	}

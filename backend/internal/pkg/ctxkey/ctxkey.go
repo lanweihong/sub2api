@@ -55,4 +55,8 @@ const (
 
 	// ClaudeCodeVersion stores the extracted Claude Code version from User-Agent (e.g. "2.1.22")
 	ClaudeCodeVersion Key = "ctx_claude_code_version"
+
+	// MultiGroupDeferred 标识当前 API Key 是多分组 Key，分组解析将延迟到 Handler 层。
+	// Value 类型: bool
+	MultiGroupDeferred Key = "ctx_multi_group_deferred"
 )

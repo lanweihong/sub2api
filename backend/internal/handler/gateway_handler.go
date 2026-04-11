@@ -158,6 +158,14 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	reqStream := parsedReq.Stream
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
 
+	// 多分组 Key：根据请求模型动态解析目标分组
+	apiKey, err = resolveMultiGroupIfNeeded(c, apiKey, reqModel)
+	if err != nil {
+		reqLog.Warn("gateway.multi_group_resolve_failed", zap.Error(err))
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "No group matches the requested model: "+reqModel)
+		return
+	}
+
 	// 设置 max_tokens=1 + haiku 探测请求标识到 context 中
 	// 必须在 SetClaudeCodeClientContext 之前设置，因为 ClaudeCodeValidator 需要读取此标识进行绕过判断
 
@@ -1777,6 +1785,37 @@ func (h *GatewayHandler) metadataBridgeEnabled() bool {
 		return true
 	}
 	return h.cfg.Gateway.OpenAIWS.MetadataBridgeEnabled
+}
+
+// resolveMultiGroupIfNeeded resolves the group for a multi-group API key based on the requested model.
+// For single-group keys (or keys without bound groups), this is a no-op.
+// Returns the (possibly updated) apiKey and an error if no group matches the model.
+func resolveMultiGroupIfNeeded(c *gin.Context, apiKey *service.APIKey, reqModel string) (*service.APIKey, error) {
+	if !middleware2.IsMultiGroupDeferred(c) {
+		return apiKey, nil
+	}
+
+	// Skip resolution for empty model; downstream validation will handle it
+	if reqModel == "" {
+		return apiKey, nil
+	}
+
+	resolvedGroup, err := service.ResolveGroupForModel(apiKey, reqModel)
+	if err != nil {
+		return apiKey, err
+	}
+	if resolvedGroup == nil {
+		return apiKey, nil
+	}
+
+	// Update the apiKey's group reference so downstream code sees the resolved group
+	apiKey.Group = resolvedGroup
+	apiKey.GroupID = &resolvedGroup.ID
+
+	// Set the group context for downstream services (account selection, billing, etc.)
+	middleware2.SetGroupContext(c, resolvedGroup)
+
+	return apiKey, nil
 }
 
 func (h *GatewayHandler) maybeLogCompatibilityFallbackMetrics(reqLog *zap.Logger) {
