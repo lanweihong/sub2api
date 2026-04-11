@@ -67,6 +67,74 @@ func (r *apiKeyRepository) Create(ctx context.Context, key *service.APIKey) erro
 	return translatePersistenceError(err, nil, service.ErrAPIKeyExists)
 }
 
+// CreateWithBoundGroups 事务化创建 API Key 并设置多分组绑定。
+// 在同一事务中完成主表创建和绑定表写入，确保原子性。
+func (r *apiKeyRepository) CreateWithBoundGroups(ctx context.Context, key *service.APIKey, bindings []service.APIKeyGroupBinding) error {
+	tx, err := r.client.Tx(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	// 1. 创建主表记录
+	builder := tx.APIKey.Create().
+		SetUserID(key.UserID).
+		SetKey(key.Key).
+		SetName(key.Name).
+		SetStatus(key.Status).
+		SetNillableGroupID(key.GroupID).
+		SetNillableLastUsedAt(key.LastUsedAt).
+		SetQuota(key.Quota).
+		SetQuotaUsed(key.QuotaUsed).
+		SetNillableExpiresAt(key.ExpiresAt).
+		SetRateLimit5h(key.RateLimit5h).
+		SetRateLimit1d(key.RateLimit1d).
+		SetRateLimit7d(key.RateLimit7d)
+
+	if len(key.IPWhitelist) > 0 {
+		builder.SetIPWhitelist(key.IPWhitelist)
+	}
+	if len(key.IPBlacklist) > 0 {
+		builder.SetIPBlacklist(key.IPBlacklist)
+	}
+
+	created, err := builder.Save(ctx)
+	if err != nil {
+		return translatePersistenceError(err, nil, service.ErrAPIKeyExists)
+	}
+	key.ID = created.ID
+	key.LastUsedAt = created.LastUsedAt
+	key.CreatedAt = created.CreatedAt
+	key.UpdatedAt = created.UpdatedAt
+
+	// 2. 创建绑定记录
+	if len(bindings) > 0 {
+		builders := make([]*dbent.APIKeyGroupCreate, 0, len(bindings))
+		for _, b := range bindings {
+			bb := tx.APIKeyGroup.Create().
+				SetAPIKeyID(key.ID).
+				SetGroupID(b.GroupID).
+				SetPriority(b.Priority)
+			if len(b.ModelPatterns) > 0 {
+				bb.SetModelPatterns(b.ModelPatterns)
+			}
+			builders = append(builders, bb)
+		}
+		if _, err = tx.APIKeyGroup.CreateBulk(builders...).Save(ctx); err != nil {
+			return fmt.Errorf("create bindings: %w", err)
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (r *apiKeyRepository) GetByID(ctx context.Context, id int64) (*service.APIKey, error) {
 	m, err := r.activeQuery().
 		Where(apikey.IDEQ(id)).
@@ -295,6 +363,118 @@ func (r *apiKeyRepository) Update(ctx context.Context, key *service.APIKey) erro
 
 	// 使用同一时间戳回填，避免并发删除导致二次查询失败。
 	key.UpdatedAt = now
+	return nil
+}
+
+// UpdateWithBoundGroups 事务化更新 API Key 并设置多分组绑定。
+// bindings 为 nil 时不更新绑定，为空切片时清空所有绑定，非空时替换绑定。
+func (r *apiKeyRepository) UpdateWithBoundGroups(ctx context.Context, key *service.APIKey, bindings *[]service.APIKeyGroupBinding) error {
+	tx, err := r.client.Tx(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	// 1. 更新主表记录
+	now := time.Now()
+	builder := tx.APIKey.Update().
+		Where(apikey.IDEQ(key.ID), apikey.DeletedAtIsNil()).
+		SetName(key.Name).
+		SetStatus(key.Status).
+		SetQuota(key.Quota).
+		SetQuotaUsed(key.QuotaUsed).
+		SetRateLimit5h(key.RateLimit5h).
+		SetRateLimit1d(key.RateLimit1d).
+		SetRateLimit7d(key.RateLimit7d).
+		SetUsage5h(key.Usage5h).
+		SetUsage1d(key.Usage1d).
+		SetUsage7d(key.Usage7d).
+		SetUpdatedAt(now)
+
+	if key.GroupID != nil {
+		builder.SetGroupID(*key.GroupID)
+	} else {
+		builder.ClearGroupID()
+	}
+
+	if key.ExpiresAt != nil {
+		builder.SetExpiresAt(*key.ExpiresAt)
+	} else {
+		builder.ClearExpiresAt()
+	}
+
+	if key.Window5hStart != nil {
+		builder.SetWindow5hStart(*key.Window5hStart)
+	} else {
+		builder.ClearWindow5hStart()
+	}
+	if key.Window1dStart != nil {
+		builder.SetWindow1dStart(*key.Window1dStart)
+	} else {
+		builder.ClearWindow1dStart()
+	}
+	if key.Window7dStart != nil {
+		builder.SetWindow7dStart(*key.Window7dStart)
+	} else {
+		builder.ClearWindow7dStart()
+	}
+
+	if len(key.IPWhitelist) > 0 {
+		builder.SetIPWhitelist(key.IPWhitelist)
+	} else {
+		builder.ClearIPWhitelist()
+	}
+	if len(key.IPBlacklist) > 0 {
+		builder.SetIPBlacklist(key.IPBlacklist)
+	} else {
+		builder.ClearIPBlacklist()
+	}
+
+	affected, err := builder.Save(ctx)
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return service.ErrAPIKeyNotFound
+	}
+	key.UpdatedAt = now
+
+	// 2. 更新绑定记录（bindings 为 nil 时跳过）
+	if bindings != nil {
+		// 删除旧绑定
+		_, err = tx.APIKeyGroup.Delete().
+			Where(apikeygroup.APIKeyID(key.ID)).
+			Exec(ctx)
+		if err != nil {
+			return fmt.Errorf("delete existing bindings: %w", err)
+		}
+
+		// 创建新绑定
+		if len(*bindings) > 0 {
+			builders := make([]*dbent.APIKeyGroupCreate, 0, len(*bindings))
+			for _, b := range *bindings {
+				bb := tx.APIKeyGroup.Create().
+					SetAPIKeyID(key.ID).
+					SetGroupID(b.GroupID).
+					SetPriority(b.Priority)
+				if len(b.ModelPatterns) > 0 {
+					bb.SetModelPatterns(b.ModelPatterns)
+				}
+				builders = append(builders, bb)
+			}
+			if _, err = tx.APIKeyGroup.CreateBulk(builders...).Save(ctx); err != nil {
+				return fmt.Errorf("create bindings: %w", err)
+			}
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -833,8 +1013,45 @@ func (r *apiKeyRepository) GetBoundGroups(ctx context.Context, apiKeyID int64) (
 }
 
 // MigrateBoundGroupsByUserAndGroup 将用户下 api_key_groups 中绑定 oldGroupID 的记录迁移到 newGroupID
+// MigrateBoundGroupsByUserAndGroup 将用户下 api_key_groups 中绑定 oldGroupID 的记录迁移到 newGroupID。
+// 为避免主键冲突，先删除同时绑定了 oldGroupID 和 newGroupID 的 Key 中 oldGroupID 对应的记录，
+// 再将剩余的 oldGroupID 绑定更新为 newGroupID。
 func (r *apiKeyRepository) MigrateBoundGroupsByUserAndGroup(ctx context.Context, userID, oldGroupID, newGroupID int64) (int64, error) {
 	client := clientFromContext(ctx, r.client)
+
+	// 1. 找出同时绑定了 oldGroupID 和 newGroupID 的记录（这些 Key 已经绑定了目标分组）
+	conflictingBindings, err := client.APIKeyGroup.Query().
+		Where(
+			apikeygroup.GroupIDEQ(oldGroupID),
+			apikeygroup.HasAPIKeyWith(
+				apikey.UserIDEQ(userID),
+				apikey.DeletedAtIsNil(),
+				apikey.HasAPIKeyGroupsWith(apikeygroup.GroupIDEQ(newGroupID)),
+			),
+		).
+		All(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("find conflicting bindings: %w", err)
+	}
+
+	// 2. 删除冲突的旧分组绑定
+	if len(conflictingBindings) > 0 {
+		conflictingKeyIDs := make([]int64, len(conflictingBindings))
+		for i, b := range conflictingBindings {
+			conflictingKeyIDs[i] = b.APIKeyID
+		}
+		_, err = client.APIKeyGroup.Delete().
+			Where(
+				apikeygroup.GroupIDEQ(oldGroupID),
+				apikeygroup.APIKeyIDIn(conflictingKeyIDs...),
+			).
+			Exec(ctx)
+		if err != nil {
+			return 0, fmt.Errorf("delete conflicting bindings: %w", err)
+		}
+	}
+
+	// 3. 将剩余的 oldGroupID 绑定更新为 newGroupID
 	n, err := client.APIKeyGroup.Update().
 		Where(
 			apikeygroup.GroupIDEQ(oldGroupID),
