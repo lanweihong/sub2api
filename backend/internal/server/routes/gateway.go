@@ -145,6 +145,7 @@ func RegisterGatewayRoutes(
 	antigravityV1.Use(middleware.ForcePlatform(service.PlatformAntigravity))
 	antigravityV1.Use(gin.HandlerFunc(apiKeyAuth))
 	antigravityV1.Use(requireGroupAnthropic)
+	antigravityV1.Use(middleware.MultiGroupPreResolve(subscriptionService))
 	{
 		antigravityV1.POST("/messages", h.Gateway.Messages)
 		antigravityV1.POST("/messages/count_tokens", h.Gateway.CountTokens)
@@ -176,6 +177,7 @@ func RegisterGatewayRoutes(
 	soraV1.Use(middleware.ForcePlatform(service.PlatformSora))
 	soraV1.Use(gin.HandlerFunc(apiKeyAuth))
 	soraV1.Use(requireGroupAnthropic)
+	soraV1.Use(middleware.MultiGroupPreResolve(subscriptionService))
 	{
 		soraV1.POST("/chat/completions", h.SoraGateway.ChatCompletions)
 		soraV1.GET("/models", h.Gateway.Models)

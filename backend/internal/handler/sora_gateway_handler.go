@@ -161,6 +161,17 @@ func (h *SoraGatewayHandler) ChatCompletions(c *gin.Context) {
 		}
 	}
 
+	apiKey, err = resolveMultiGroupIfNeeded(c, apiKey, reqModel)
+	if err != nil {
+		reqLog.Warn("sora.multi_group_resolve_failed", zap.Error(err))
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "No group matches the requested model: "+reqModel)
+		return
+	}
+	if apiKey.HasBoundGroups() && apiKey.GroupID == nil {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "No group matches the requested model: "+reqModel)
+		return
+	}
+
 	setOpsRequestContext(c, reqModel, clientStream, body)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(clientStream, false)))
 

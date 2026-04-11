@@ -134,7 +134,7 @@ func (r *stubAccountRepo) ListWithFilters(ctx context.Context, params pagination
 	return nil, nil, nil
 }
 func (r *stubAccountRepo) ListByGroup(ctx context.Context, groupID int64) ([]service.Account, error) {
-	return nil, nil
+	return r.listByGroup(groupID), nil
 }
 func (r *stubAccountRepo) ListActive(ctx context.Context) ([]service.Account, error) { return nil, nil }
 func (r *stubAccountRepo) ListByPlatform(ctx context.Context, platform string) ([]service.Account, error) {
@@ -159,13 +159,13 @@ func (r *stubAccountRepo) ListSchedulable(ctx context.Context) ([]service.Accoun
 	return r.listSchedulable(), nil
 }
 func (r *stubAccountRepo) ListSchedulableByGroupID(ctx context.Context, groupID int64) ([]service.Account, error) {
-	return r.listSchedulable(), nil
+	return r.listSchedulableByGroup(groupID), nil
 }
 func (r *stubAccountRepo) ListSchedulableByPlatform(ctx context.Context, platform string) ([]service.Account, error) {
 	return r.listSchedulableByPlatform(platform), nil
 }
 func (r *stubAccountRepo) ListSchedulableByGroupIDAndPlatform(ctx context.Context, groupID int64, platform string) ([]service.Account, error) {
-	return r.listSchedulableByPlatform(platform), nil
+	return r.listSchedulableByGroupAndPlatform(groupID, platform), nil
 }
 func (r *stubAccountRepo) ListSchedulableByPlatforms(ctx context.Context, platforms []string) ([]service.Account, error) {
 	var result []service.Account
@@ -180,7 +180,19 @@ func (r *stubAccountRepo) ListSchedulableByPlatforms(ctx context.Context, platfo
 	return result, nil
 }
 func (r *stubAccountRepo) ListSchedulableByGroupIDAndPlatforms(ctx context.Context, groupID int64, platforms []string) ([]service.Account, error) {
-	return r.ListSchedulableByPlatforms(ctx, platforms)
+	var result []service.Account
+	for _, acc := range r.accounts {
+		if !acc.IsSchedulable() || !r.accountInGroup(acc, groupID) {
+			continue
+		}
+		for _, platform := range platforms {
+			if acc.Platform == platform {
+				result = append(result, *acc)
+				break
+			}
+		}
+	}
+	return result, nil
 }
 func (r *stubAccountRepo) ListSchedulableUngroupedByPlatform(ctx context.Context, platform string) ([]service.Account, error) {
 	return r.ListSchedulableByPlatform(ctx, platform)
@@ -242,6 +254,45 @@ func (r *stubAccountRepo) listSchedulableByPlatform(platform string) []service.A
 		}
 	}
 	return result
+}
+
+func (r *stubAccountRepo) listByGroup(groupID int64) []service.Account {
+	var result []service.Account
+	for _, acc := range r.accounts {
+		if r.accountInGroup(acc, groupID) {
+			result = append(result, *acc)
+		}
+	}
+	return result
+}
+
+func (r *stubAccountRepo) listSchedulableByGroup(groupID int64) []service.Account {
+	var result []service.Account
+	for _, acc := range r.accounts {
+		if acc.IsSchedulable() && r.accountInGroup(acc, groupID) {
+			result = append(result, *acc)
+		}
+	}
+	return result
+}
+
+func (r *stubAccountRepo) listSchedulableByGroupAndPlatform(groupID int64, platform string) []service.Account {
+	var result []service.Account
+	for _, acc := range r.accounts {
+		if acc.Platform == platform && acc.IsSchedulable() && r.accountInGroup(acc, groupID) {
+			result = append(result, *acc)
+		}
+	}
+	return result
+}
+
+func (r *stubAccountRepo) accountInGroup(acc *service.Account, groupID int64) bool {
+	for _, ag := range acc.AccountGroups {
+		if ag.GroupID == groupID {
+			return true
+		}
+	}
+	return false
 }
 
 type stubGroupRepo struct {
@@ -465,12 +516,14 @@ func TestSoraGatewayHandler_ChatCompletions(t *testing.T) {
 		nil, // digestStore
 		nil, // settingService
 		nil, // tlsFPProfileService
+		nil, // payloadRepo
 	)
 
 	soraClient := &stubSoraClient{imageURLs: []string{"https://example.com/a.png"}}
 	soraGatewayService := service.NewSoraGatewayService(soraClient, nil, nil, cfg)
+	settingService := service.NewSettingService(newStubSettingRepoForHandler(nil), cfg)
 
-	handler := NewSoraGatewayHandler(gatewayService, soraGatewayService, concurrencyService, billingCacheService, nil, cfg)
+	handler := NewSoraGatewayHandler(gatewayService, soraGatewayService, concurrencyService, billingCacheService, nil, settingService, cfg)
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
