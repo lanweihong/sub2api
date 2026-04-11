@@ -140,6 +140,30 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		var subscription *service.UserSubscription
 		isSubscriptionType := apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
 
+		// 对于 /v1/usage 端点的多分组 Key，选择最高优先级分组并加载订阅
+		// 这样 handler 可以正确展示订阅或余额信息
+		if skipBilling && isMultiGroup && subscriptionService != nil {
+			resolvedGroup, _ := service.ResolveGroupForModel(apiKey, "")
+			if resolvedGroup != nil {
+				apiKey.Group = resolvedGroup
+				apiKey.GroupID = &resolvedGroup.ID
+				setGroupContext(c, resolvedGroup)
+				isSubscriptionType = resolvedGroup.IsSubscriptionType()
+				if isSubscriptionType {
+					sub, _ := subscriptionService.GetActiveSubscription(
+						c.Request.Context(),
+						apiKey.User.ID,
+						resolvedGroup.ID,
+					)
+					if sub != nil {
+						subscription = sub
+					}
+				}
+				// 标记已处理，不再延迟到 handler
+				isMultiGroup = false
+			}
+		}
+
 		if isSubscriptionType && !isMultiGroup && subscriptionService != nil {
 			sub, subErr := subscriptionService.GetActiveSubscription(
 				c.Request.Context(),
@@ -201,8 +225,9 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 					maintenanceCopy := *subscription
 					subscriptionService.DoWindowMaintenance(&maintenanceCopy)
 				}
-			} else {
-				// 非订阅模式 或 订阅模式但 subscriptionService 未注入：回退到余额检查
+			} else if !isMultiGroup {
+				// 非订阅模式 且 非多分组：回退到余额检查
+				// 多分组 Key 跳过此检查，由 MultiGroupPreResolve 中间件统一处理
 				if apiKey.User.Balance <= 0 {
 					AbortWithError(c, 403, "INSUFFICIENT_BALANCE", "Insufficient account balance")
 					return

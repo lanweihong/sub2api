@@ -3,6 +3,7 @@ package middleware
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 
@@ -67,14 +68,42 @@ func MultiGroupPreResolve(subscriptionService *service.SubscriptionService) gin.
 		SetGroupContext(c, resolvedGroup)
 
 		// Load subscription if needed (deferred from auth middleware for multi-group keys)
+		// 订阅型分组必须强制校验订阅，失败则中止请求（不允许回退到余额模式）
 		if resolvedGroup.IsSubscriptionType() && subscriptionService != nil && apiKey.User != nil {
 			sub, subErr := subscriptionService.GetActiveSubscription(
 				c.Request.Context(),
 				apiKey.User.ID,
 				resolvedGroup.ID,
 			)
-			if subErr == nil && sub != nil {
-				c.Set(string(ContextKeySubscription), sub)
+			if subErr != nil || sub == nil {
+				AbortWithError(c, 403, "SUBSCRIPTION_NOT_FOUND", "No active subscription found for this group")
+				return
+			}
+			// 校验订阅限额
+			needsMaintenance, validateErr := subscriptionService.ValidateAndCheckLimits(sub, resolvedGroup)
+			if validateErr != nil {
+				code := "SUBSCRIPTION_INVALID"
+				status := 403
+				if errors.Is(validateErr, service.ErrDailyLimitExceeded) ||
+					errors.Is(validateErr, service.ErrWeeklyLimitExceeded) ||
+					errors.Is(validateErr, service.ErrMonthlyLimitExceeded) {
+					code = "USAGE_LIMIT_EXCEEDED"
+					status = 429
+				}
+				AbortWithError(c, status, code, validateErr.Error())
+				return
+			}
+			c.Set(string(ContextKeySubscription), sub)
+			// 窗口维护异步化
+			if needsMaintenance {
+				maintenanceCopy := *sub
+				subscriptionService.DoWindowMaintenance(&maintenanceCopy)
+			}
+		} else if apiKey.User != nil {
+			// 非订阅型分组：检查余额
+			if apiKey.User.Balance <= 0 {
+				AbortWithError(c, 403, "INSUFFICIENT_BALANCE", "Insufficient account balance")
+				return
 			}
 		}
 

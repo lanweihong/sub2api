@@ -107,7 +107,9 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 				maintenanceCopy := *subscription
 				subscriptionService.DoWindowMaintenance(&maintenanceCopy)
 			}
-		} else {
+		} else if !isMultiGroup {
+			// 非订阅模式 且 非多分组：回退到余额检查
+			// 多分组 Key 跳过此检查，由 MultiGroupPreResolveGemini 中间件统一处理
 			if apiKey.User.Balance <= 0 {
 				abortWithGoogleError(c, 403, "Insufficient account balance")
 				return
