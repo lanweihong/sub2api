@@ -1574,6 +1574,15 @@ func (r *stubApiKeyRepo) ResetRateLimitWindows(ctx context.Context, id int64) er
 func (r *stubApiKeyRepo) GetRateLimitData(ctx context.Context, id int64) (*service.APIKeyRateLimitData, error) {
 	return nil, nil
 }
+func (r *stubApiKeyRepo) SetBoundGroups(ctx context.Context, apiKeyID int64, bindings []service.APIKeyGroupBinding) error {
+	return nil
+}
+func (r *stubApiKeyRepo) GetBoundGroups(ctx context.Context, apiKeyID int64) ([]service.APIKeyGroup, error) {
+	return nil, nil
+}
+func (r *stubApiKeyRepo) MigrateBoundGroupsByUserAndGroup(ctx context.Context, userID, oldGroupID, newGroupID int64) (int64, error) {
+	return 0, nil
+}
 
 type stubUsageLogRepo struct {
 	userLogs map[int64][]service.UsageLog

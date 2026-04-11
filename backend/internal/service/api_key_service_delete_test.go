@@ -148,6 +148,15 @@ func (s *apiKeyRepoStub) ResetRateLimitWindows(ctx context.Context, id int64) er
 func (s *apiKeyRepoStub) GetRateLimitData(ctx context.Context, id int64) (*APIKeyRateLimitData, error) {
 	panic("unexpected GetRateLimitData call")
 }
+func (s *apiKeyRepoStub) SetBoundGroups(ctx context.Context, apiKeyID int64, bindings []APIKeyGroupBinding) error {
+	panic("unexpected SetBoundGroups call")
+}
+func (s *apiKeyRepoStub) GetBoundGroups(ctx context.Context, apiKeyID int64) ([]APIKeyGroup, error) {
+	panic("unexpected GetBoundGroups call")
+}
+func (s *apiKeyRepoStub) MigrateBoundGroupsByUserAndGroup(ctx context.Context, userID, oldGroupID, newGroupID int64) (int64, error) {
+	return 0, nil
+}
 
 // apiKeyCacheStub 是 APIKeyCache 接口的测试桩实现。
 // 用于验证删除操作时缓存清理逻辑是否被正确调用。

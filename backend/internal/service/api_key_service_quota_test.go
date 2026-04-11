@@ -149,6 +149,15 @@ func (s *quotaBaseAPIKeyRepoStub) ResetRateLimitWindows(context.Context, int64) 
 func (s *quotaBaseAPIKeyRepoStub) GetRateLimitData(context.Context, int64) (*APIKeyRateLimitData, error) {
 	panic("unexpected GetRateLimitData call")
 }
+func (s *quotaBaseAPIKeyRepoStub) SetBoundGroups(context.Context, int64, []APIKeyGroupBinding) error {
+	panic("unexpected SetBoundGroups call")
+}
+func (s *quotaBaseAPIKeyRepoStub) GetBoundGroups(context.Context, int64) ([]APIKeyGroup, error) {
+	panic("unexpected GetBoundGroups call")
+}
+func (s *quotaBaseAPIKeyRepoStub) MigrateBoundGroupsByUserAndGroup(context.Context, int64, int64, int64) (int64, error) {
+	return 0, nil
+}
 
 func TestAPIKeyService_UpdateQuotaUsed_UsesAtomicStatePath(t *testing.T) {
 	repo := &quotaStateRepoStub{

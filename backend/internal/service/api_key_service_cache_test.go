@@ -118,6 +118,15 @@ func (s *authRepoStub) ResetRateLimitWindows(ctx context.Context, id int64) erro
 func (s *authRepoStub) GetRateLimitData(ctx context.Context, id int64) (*APIKeyRateLimitData, error) {
 	panic("unexpected GetRateLimitData call")
 }
+func (s *authRepoStub) SetBoundGroups(ctx context.Context, apiKeyID int64, bindings []APIKeyGroupBinding) error {
+	panic("unexpected SetBoundGroups call")
+}
+func (s *authRepoStub) GetBoundGroups(ctx context.Context, apiKeyID int64) ([]APIKeyGroup, error) {
+	panic("unexpected GetBoundGroups call")
+}
+func (s *authRepoStub) MigrateBoundGroupsByUserAndGroup(ctx context.Context, userID, oldGroupID, newGroupID int64) (int64, error) {
+	return 0, nil
+}
 
 type authCacheStub struct {
 	getAuthCache   func(ctx context.Context, key string) (*APIKeyAuthCacheEntry, error)

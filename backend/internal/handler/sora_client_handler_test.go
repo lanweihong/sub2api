@@ -1058,6 +1058,15 @@ func (r *stubAPIKeyRepoForHandler) ResetRateLimitWindows(context.Context, int64)
 func (r *stubAPIKeyRepoForHandler) GetRateLimitData(context.Context, int64) (*service.APIKeyRateLimitData, error) {
 	return nil, nil
 }
+func (r *stubAPIKeyRepoForHandler) SetBoundGroups(ctx context.Context, apiKeyID int64, bindings []service.APIKeyGroupBinding) error {
+	return nil
+}
+func (r *stubAPIKeyRepoForHandler) GetBoundGroups(ctx context.Context, apiKeyID int64) ([]service.APIKeyGroup, error) {
+	return nil, nil
+}
+func (r *stubAPIKeyRepoForHandler) MigrateBoundGroupsByUserAndGroup(ctx context.Context, userID, oldGroupID, newGroupID int64) (int64, error) {
+	return 0, nil
+}
 
 // newTestAPIKeyService 创建测试用的 APIKeyService
 func newTestAPIKeyService(repo *stubAPIKeyRepoForHandler) *service.APIKeyService {

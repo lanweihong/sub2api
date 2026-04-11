@@ -104,6 +104,15 @@ func (f fakeAPIKeyRepo) ResetRateLimitWindows(ctx context.Context, id int64) err
 func (f fakeAPIKeyRepo) GetRateLimitData(ctx context.Context, id int64) (*service.APIKeyRateLimitData, error) {
 	return &service.APIKeyRateLimitData{}, nil
 }
+func (f fakeAPIKeyRepo) SetBoundGroups(ctx context.Context, apiKeyID int64, bindings []service.APIKeyGroupBinding) error {
+	return nil
+}
+func (f fakeAPIKeyRepo) GetBoundGroups(ctx context.Context, apiKeyID int64) ([]service.APIKeyGroup, error) {
+	return nil, nil
+}
+func (f fakeAPIKeyRepo) MigrateBoundGroupsByUserAndGroup(ctx context.Context, userID, oldGroupID, newGroupID int64) (int64, error) {
+	return 0, nil
+}
 func (f fakeAPIKeyRepo) UpdateGroupIDByUserAndGroup(ctx context.Context, userID, oldGroupID, newGroupID int64) (int64, error) {
 	return 0, errors.New("not implemented")
 }
