@@ -130,6 +130,9 @@ func (APIKey) Edges() []ent.Edge {
 			Field("group_id").
 			Unique(),
 		edge.To("usage_logs", UsageLog.Type),
+		// Many-to-many: an API key can be associated with multiple groups
+		edge.To("bound_groups", Group.Type).
+			Through("api_key_groups", APIKeyGroup.Type),
 	}
 }
 
