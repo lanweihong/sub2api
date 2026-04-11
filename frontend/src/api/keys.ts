@@ -3,8 +3,8 @@
  * Handles CRUD operations for user API keys
  */
 
-import { apiClient } from './client'
-import type { ApiKey, CreateApiKeyRequest, UpdateApiKeyRequest, PaginatedResponse } from '@/types'
+import type { ApiKey, ApiKeyBoundGroup, ApiKeyBoundGroupBinding, CreateApiKeyRequest, PaginatedResponse, UpdateApiKeyRequest } from '@/types';
+import { apiClient } from './client';
 
 /**
  * List all API keys for current user
@@ -59,7 +59,8 @@ export async function create(
   ipBlacklist?: string[],
   quota?: number,
   expiresInDays?: number,
-  rateLimitData?: { rate_limit_5h?: number; rate_limit_1d?: number; rate_limit_7d?: number }
+  rateLimitData?: { rate_limit_5h?: number; rate_limit_1d?: number; rate_limit_7d?: number },
+  boundGroups?: ApiKeyBoundGroupBinding[]
 ): Promise<ApiKey> {
   const payload: CreateApiKeyRequest = { name }
   if (groupId !== undefined) {
@@ -88,6 +89,9 @@ export async function create(
   }
   if (rateLimitData?.rate_limit_7d && rateLimitData.rate_limit_7d > 0) {
     payload.rate_limit_7d = rateLimitData.rate_limit_7d
+  }
+  if (boundGroups && boundGroups.length > 0) {
+    payload.bound_groups = boundGroups
   }
 
   const { data } = await apiClient.post<ApiKey>('/keys', payload)
@@ -125,13 +129,30 @@ export async function toggleStatus(id: number, status: 'active' | 'inactive'): P
   return update(id, { status })
 }
 
+/**
+ * Get bound groups for an API key
+ */
+export async function getBoundGroups(id: number): Promise<ApiKeyBoundGroup[]> {
+  const { data } = await apiClient.get<ApiKeyBoundGroup[]>(`/keys/${id}/bound-groups`)
+  return data
+}
+
+/**
+ * Set bound groups for an API key (replaces all bindings)
+ */
+export async function setBoundGroups(id: number, bindings: ApiKeyBoundGroupBinding[]): Promise<void> {
+  await apiClient.put(`/keys/${id}/bound-groups`, { bound_groups: bindings })
+}
+
 export const keysAPI = {
   list,
   getById,
   create,
   update,
   delete: deleteKey,
-  toggleStatus
+  toggleStatus,
+  getBoundGroups,
+  setBoundGroups
 }
 
 export default keysAPI

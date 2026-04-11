@@ -459,6 +459,24 @@ export interface ApiKey {
   reset_5h_at: string | null
   reset_1d_at: string | null
   reset_7d_at: string | null
+  bound_groups?: ApiKeyBoundGroup[]
+}
+
+export interface ApiKeyBoundGroup {
+  group_id: number
+  priority: number
+  model_patterns: string[]
+  group?: Group
+}
+
+export interface SetBoundGroupsRequest {
+  bindings: ApiKeyBoundGroupBinding[]
+}
+
+export interface ApiKeyBoundGroupBinding {
+  group_id: number
+  priority: number
+  model_patterns?: string[]
 }
 
 export interface CreateApiKeyRequest {
@@ -472,6 +490,7 @@ export interface CreateApiKeyRequest {
   rate_limit_5h?: number
   rate_limit_1d?: number
   rate_limit_7d?: number
+  bound_groups?: ApiKeyBoundGroupBinding[]
 }
 
 export interface UpdateApiKeyRequest {
@@ -487,6 +506,7 @@ export interface UpdateApiKeyRequest {
   rate_limit_1d?: number
   rate_limit_7d?: number
   reset_rate_limit_usage?: boolean
+  bound_groups?: ApiKeyBoundGroupBinding[]
 }
 
 export interface CreateGroupRequest {
