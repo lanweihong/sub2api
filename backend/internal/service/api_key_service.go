@@ -77,6 +77,12 @@ type APIKeyRepository interface {
 	IncrementRateLimitUsage(ctx context.Context, id int64, cost float64) error
 	ResetRateLimitWindows(ctx context.Context, id int64) error
 	GetRateLimitData(ctx context.Context, id int64) (*APIKeyRateLimitData, error)
+
+	// Multi-group binding methods
+	SetBoundGroups(ctx context.Context, apiKeyID int64, bindings []APIKeyGroupBinding) error
+	GetBoundGroups(ctx context.Context, apiKeyID int64) ([]APIKeyGroup, error)
+	// MigrateBoundGroupsByUserAndGroup 将用户下 api_key_groups 中绑定 oldGroupID 的记录迁移到 newGroupID
+	MigrateBoundGroupsByUserAndGroup(ctx context.Context, userID, oldGroupID, newGroupID int64) (int64, error)
 }
 
 // APIKeyRateLimitData holds rate limit usage and window state for an API key.
@@ -163,6 +169,9 @@ type CreateAPIKeyRequest struct {
 	RateLimit5h float64 `json:"rate_limit_5h"`
 	RateLimit1d float64 `json:"rate_limit_1d"`
 	RateLimit7d float64 `json:"rate_limit_7d"`
+
+	// Multi-group bindings (optional, set alongside create in single request)
+	BoundGroups []APIKeyGroupBinding `json:"bound_groups,omitempty"`
 }
 
 // UpdateAPIKeyRequest 更新API Key请求
@@ -184,6 +193,9 @@ type UpdateAPIKeyRequest struct {
 	RateLimit1d         *float64 `json:"rate_limit_1d"`
 	RateLimit7d         *float64 `json:"rate_limit_7d"`
 	ResetRateLimitUsage *bool    `json:"reset_rate_limit_usage"` // Reset all usage counters to 0
+
+	// Multi-group bindings (nil = no change, [] = clear all, [...] = replace)
+	BoundGroups *[]APIKeyGroupBinding `json:"bound_groups,omitempty"`
 }
 
 // APIKeyService API Key服务
@@ -424,6 +436,23 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 	s.InvalidateAuthCacheByKey(ctx, apiKey.Key)
 	s.compileAPIKeyIPRules(apiKey)
 
+	// 创建后设置多分组绑定（如果提供）
+	if len(req.BoundGroups) > 0 {
+		for _, b := range req.BoundGroups {
+			grp, err := s.groupRepo.GetByID(ctx, b.GroupID)
+			if err != nil {
+				return nil, fmt.Errorf("get group %d: %w", b.GroupID, err)
+			}
+			if !s.canUserBindGroup(ctx, user, grp) {
+				return nil, ErrGroupNotAllowed
+			}
+		}
+		if err := s.apiKeyRepo.SetBoundGroups(ctx, apiKey.ID, req.BoundGroups); err != nil {
+			return nil, fmt.Errorf("set bound groups: %w", err)
+		}
+		s.InvalidateAuthCacheByKey(ctx, apiKey.Key)
+	}
+
 	return apiKey, nil
 }
 
@@ -631,6 +660,29 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 	// Invalidate Redis rate limit cache so reset takes effect immediately
 	if resetRateLimit && s.rateLimitCacheInvalid != nil {
 		_ = s.rateLimitCacheInvalid.InvalidateAPIKeyRateLimit(ctx, apiKey.ID)
+	}
+
+	// 更新多分组绑定（nil=不变, []=清空, [...]= 替换）
+	if req.BoundGroups != nil {
+		if len(*req.BoundGroups) > 0 {
+			u, err := s.userRepo.GetByID(ctx, userID)
+			if err != nil {
+				return nil, fmt.Errorf("get user: %w", err)
+			}
+			for _, b := range *req.BoundGroups {
+				grp, err := s.groupRepo.GetByID(ctx, b.GroupID)
+				if err != nil {
+					return nil, fmt.Errorf("get group %d: %w", b.GroupID, err)
+				}
+				if !s.canUserBindGroup(ctx, u, grp) {
+					return nil, ErrGroupNotAllowed
+				}
+			}
+		}
+		if err := s.apiKeyRepo.SetBoundGroups(ctx, apiKey.ID, *req.BoundGroups); err != nil {
+			return nil, fmt.Errorf("set bound groups: %w", err)
+		}
+		s.InvalidateAuthCacheByKey(ctx, apiKey.Key)
 	}
 
 	return apiKey, nil
@@ -880,4 +932,54 @@ func (s *APIKeyService) UpdateRateLimitUsage(ctx context.Context, apiKeyID int64
 		return nil
 	}
 	return s.apiKeyRepo.IncrementRateLimitUsage(ctx, apiKeyID, cost)
+}
+
+// SetBoundGroups replaces all multi-group bindings for an API key.
+// The caller must have ownership of the API key. Each group is validated
+// for existence and user binding permission.
+func (s *APIKeyService) SetBoundGroups(ctx context.Context, userID, apiKeyID int64, bindings []APIKeyGroupBinding) error {
+	// Verify ownership
+	apiKey, err := s.apiKeyRepo.GetByID(ctx, apiKeyID)
+	if err != nil {
+		return fmt.Errorf("get api key: %w", err)
+	}
+	if apiKey.UserID != userID {
+		return ErrAPIKeyNotFound
+	}
+
+	// Validate groups
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("get user: %w", err)
+	}
+	for _, b := range bindings {
+		grp, err := s.groupRepo.GetByID(ctx, b.GroupID)
+		if err != nil {
+			return fmt.Errorf("get group %d: %w", b.GroupID, err)
+		}
+		if !s.canUserBindGroup(ctx, user, grp) {
+			return ErrGroupNotAllowed
+		}
+	}
+
+	if err := s.apiKeyRepo.SetBoundGroups(ctx, apiKeyID, bindings); err != nil {
+		return err
+	}
+
+	// Invalidate auth cache since bound groups affect routing
+	s.InvalidateAuthCacheByKey(ctx, apiKey.Key)
+
+	return nil
+}
+
+// GetBoundGroups returns the multi-group bindings for an API key.
+func (s *APIKeyService) GetBoundGroups(ctx context.Context, userID, apiKeyID int64) ([]APIKeyGroup, error) {
+	apiKey, err := s.apiKeyRepo.GetByID(ctx, apiKeyID)
+	if err != nil {
+		return nil, fmt.Errorf("get api key: %w", err)
+	}
+	if apiKey.UserID != userID {
+		return nil, ErrAPIKeyNotFound
+	}
+	return s.apiKeyRepo.GetBoundGroups(ctx, apiKeyID)
 }

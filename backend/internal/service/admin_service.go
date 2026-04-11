@@ -1489,6 +1489,12 @@ func (s *adminServiceImpl) ReplaceUserGroup(ctx context.Context, userID, oldGrou
 		return nil, fmt.Errorf("migrate api keys: %w", err)
 	}
 
+	// 2.5 迁移 api_key_groups 中间表中的绑定
+	_, err = s.apiKeyRepo.MigrateBoundGroupsByUserAndGroup(opCtx, userID, oldGroupID, newGroupID)
+	if err != nil {
+		return nil, fmt.Errorf("migrate api key group bindings: %w", err)
+	}
+
 	// 3. 移除旧分组权限
 	if err := s.userRepo.RemoveGroupFromUserAllowedGroups(opCtx, userID, oldGroupID); err != nil {
 		return nil, fmt.Errorf("remove old group from allowed groups: %w", err)

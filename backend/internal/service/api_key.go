@@ -44,6 +44,7 @@ type APIKey struct {
 	UpdatedAt           time.Time
 	User                *User
 	Group               *Group
+	BoundGroups         []APIKeyGroup // Multi-group bindings (via api_key_groups table)
 
 	// Quota fields
 	Quota     float64    // Quota limit in USD (0 = unlimited)
@@ -133,6 +134,17 @@ func (k *APIKey) EffectiveUsage7d() float64 {
 		return 0
 	}
 	return k.Usage7d
+}
+
+// IsMultiGroup returns true if this API key is bound to multiple groups
+// via the api_key_groups table.
+func (k *APIKey) IsMultiGroup() bool {
+	return len(k.BoundGroups) > 1
+}
+
+// HasBoundGroups returns true if this API key has any multi-group bindings.
+func (k *APIKey) HasBoundGroups() bool {
+	return len(k.BoundGroups) > 0
 }
 
 // APIKeyListFilters holds optional filtering parameters for listing API keys.

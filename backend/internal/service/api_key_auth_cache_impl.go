@@ -249,6 +249,46 @@ func (s *APIKeyService) snapshotFromAPIKey(apiKey *APIKey) *APIKeyAuthSnapshot {
 			DefaultMappedModel:              apiKey.Group.DefaultMappedModel,
 		}
 	}
+	if len(apiKey.BoundGroups) > 0 {
+		snapshot.BoundGroups = make([]APIKeyAuthBoundGroupSnapshot, len(apiKey.BoundGroups))
+		for i, bg := range apiKey.BoundGroups {
+			bgSnap := APIKeyAuthBoundGroupSnapshot{
+				GroupID:       bg.GroupID,
+				Priority:      bg.Priority,
+				ModelPatterns: bg.ModelPatterns,
+			}
+			if bg.Group != nil {
+				bgSnap.Group = &APIKeyAuthGroupSnapshot{
+					ID:                              bg.Group.ID,
+					Name:                            bg.Group.Name,
+					Platform:                        bg.Group.Platform,
+					Status:                          bg.Group.Status,
+					SubscriptionType:                bg.Group.SubscriptionType,
+					RateMultiplier:                  bg.Group.RateMultiplier,
+					DailyLimitUSD:                   bg.Group.DailyLimitUSD,
+					WeeklyLimitUSD:                  bg.Group.WeeklyLimitUSD,
+					MonthlyLimitUSD:                 bg.Group.MonthlyLimitUSD,
+					ImagePrice1K:                    bg.Group.ImagePrice1K,
+					ImagePrice2K:                    bg.Group.ImagePrice2K,
+					ImagePrice4K:                    bg.Group.ImagePrice4K,
+					SoraImagePrice360:               bg.Group.SoraImagePrice360,
+					SoraImagePrice540:               bg.Group.SoraImagePrice540,
+					SoraVideoPricePerRequest:        bg.Group.SoraVideoPricePerRequest,
+					SoraVideoPricePerRequestHD:      bg.Group.SoraVideoPricePerRequestHD,
+					ClaudeCodeOnly:                  bg.Group.ClaudeCodeOnly,
+					FallbackGroupID:                 bg.Group.FallbackGroupID,
+					FallbackGroupIDOnInvalidRequest: bg.Group.FallbackGroupIDOnInvalidRequest,
+					ModelRouting:                    bg.Group.ModelRouting,
+					ModelRoutingEnabled:             bg.Group.ModelRoutingEnabled,
+					MCPXMLInject:                    bg.Group.MCPXMLInject,
+					SupportedModelScopes:            bg.Group.SupportedModelScopes,
+					AllowMessagesDispatch:           bg.Group.AllowMessagesDispatch,
+					DefaultMappedModel:              bg.Group.DefaultMappedModel,
+				}
+			}
+			snapshot.BoundGroups[i] = bgSnap
+		}
+	}
 	return snapshot
 }
 
@@ -306,6 +346,48 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 			SupportedModelScopes:            snapshot.Group.SupportedModelScopes,
 			AllowMessagesDispatch:           snapshot.Group.AllowMessagesDispatch,
 			DefaultMappedModel:              snapshot.Group.DefaultMappedModel,
+		}
+	}
+	if len(snapshot.BoundGroups) > 0 {
+		apiKey.BoundGroups = make([]APIKeyGroup, len(snapshot.BoundGroups))
+		for i, bgSnap := range snapshot.BoundGroups {
+			bg := APIKeyGroup{
+				APIKeyID:      snapshot.APIKeyID,
+				GroupID:       bgSnap.GroupID,
+				Priority:      bgSnap.Priority,
+				ModelPatterns: bgSnap.ModelPatterns,
+			}
+			if bgSnap.Group != nil {
+				bg.Group = &Group{
+					ID:                              bgSnap.Group.ID,
+					Name:                            bgSnap.Group.Name,
+					Platform:                        bgSnap.Group.Platform,
+					Status:                          bgSnap.Group.Status,
+					Hydrated:                        true,
+					SubscriptionType:                bgSnap.Group.SubscriptionType,
+					RateMultiplier:                  bgSnap.Group.RateMultiplier,
+					DailyLimitUSD:                   bgSnap.Group.DailyLimitUSD,
+					WeeklyLimitUSD:                  bgSnap.Group.WeeklyLimitUSD,
+					MonthlyLimitUSD:                 bgSnap.Group.MonthlyLimitUSD,
+					ImagePrice1K:                    bgSnap.Group.ImagePrice1K,
+					ImagePrice2K:                    bgSnap.Group.ImagePrice2K,
+					ImagePrice4K:                    bgSnap.Group.ImagePrice4K,
+					SoraImagePrice360:               bgSnap.Group.SoraImagePrice360,
+					SoraImagePrice540:               bgSnap.Group.SoraImagePrice540,
+					SoraVideoPricePerRequest:        bgSnap.Group.SoraVideoPricePerRequest,
+					SoraVideoPricePerRequestHD:      bgSnap.Group.SoraVideoPricePerRequestHD,
+					ClaudeCodeOnly:                  bgSnap.Group.ClaudeCodeOnly,
+					FallbackGroupID:                 bgSnap.Group.FallbackGroupID,
+					FallbackGroupIDOnInvalidRequest: bgSnap.Group.FallbackGroupIDOnInvalidRequest,
+					ModelRouting:                    bgSnap.Group.ModelRouting,
+					ModelRoutingEnabled:             bgSnap.Group.ModelRoutingEnabled,
+					MCPXMLInject:                    bgSnap.Group.MCPXMLInject,
+					SupportedModelScopes:            bgSnap.Group.SupportedModelScopes,
+					AllowMessagesDispatch:           bgSnap.Group.AllowMessagesDispatch,
+					DefaultMappedModel:              bgSnap.Group.DefaultMappedModel,
+				}
+			}
+			apiKey.BoundGroups[i] = bg
 		}
 	}
 	s.compileAPIKeyIPRules(apiKey)
