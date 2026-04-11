@@ -510,6 +510,10 @@ func (r *stubApiKeyRepo) Create(ctx context.Context, key *service.APIKey) error 
 	return errors.New("not implemented")
 }
 
+func (r *stubApiKeyRepo) CreateWithBoundGroups(ctx context.Context, key *service.APIKey, bindings []service.APIKeyGroupBinding) error {
+	return errors.New("not implemented")
+}
+
 func (r *stubApiKeyRepo) GetByID(ctx context.Context, id int64) (*service.APIKey, error) {
 	return nil, errors.New("not implemented")
 }
@@ -530,6 +534,10 @@ func (r *stubApiKeyRepo) GetByKeyForAuth(ctx context.Context, key string) (*serv
 }
 
 func (r *stubApiKeyRepo) Update(ctx context.Context, key *service.APIKey) error {
+	return errors.New("not implemented")
+}
+
+func (r *stubApiKeyRepo) UpdateWithBoundGroups(ctx context.Context, key *service.APIKey, bindings *[]service.APIKeyGroupBinding) error {
 	return errors.New("not implemented")
 }
 

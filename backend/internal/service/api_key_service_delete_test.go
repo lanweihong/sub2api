@@ -154,6 +154,12 @@ func (s *apiKeyRepoStub) SetBoundGroups(ctx context.Context, apiKeyID int64, bin
 func (s *apiKeyRepoStub) GetBoundGroups(ctx context.Context, apiKeyID int64) ([]APIKeyGroup, error) {
 	panic("unexpected GetBoundGroups call")
 }
+func (s *apiKeyRepoStub) CreateWithBoundGroups(ctx context.Context, key *APIKey, bindings []APIKeyGroupBinding) error {
+	panic("unexpected CreateWithBoundGroups call")
+}
+func (s *apiKeyRepoStub) UpdateWithBoundGroups(ctx context.Context, key *APIKey, bindings *[]APIKeyGroupBinding) error {
+	panic("unexpected UpdateWithBoundGroups call")
+}
 func (s *apiKeyRepoStub) MigrateBoundGroupsByUserAndGroup(ctx context.Context, userID, oldGroupID, newGroupID int64) (int64, error) {
 	return 0, nil
 }

@@ -82,6 +82,9 @@ type quotaBaseAPIKeyRepoStub struct {
 func (s *quotaBaseAPIKeyRepoStub) Create(context.Context, *APIKey) error {
 	panic("unexpected Create call")
 }
+func (s *quotaBaseAPIKeyRepoStub) CreateWithBoundGroups(context.Context, *APIKey, []APIKeyGroupBinding) error {
+	panic("unexpected CreateWithBoundGroups call")
+}
 func (s *quotaBaseAPIKeyRepoStub) GetByID(context.Context, int64) (*APIKey, error) {
 	s.getByIDCalls++
 	return nil, nil
@@ -97,6 +100,9 @@ func (s *quotaBaseAPIKeyRepoStub) GetByKeyForAuth(context.Context, string) (*API
 }
 func (s *quotaBaseAPIKeyRepoStub) Update(context.Context, *APIKey) error {
 	panic("unexpected Update call")
+}
+func (s *quotaBaseAPIKeyRepoStub) UpdateWithBoundGroups(context.Context, *APIKey, *[]APIKeyGroupBinding) error {
+	panic("unexpected UpdateWithBoundGroups call")
 }
 func (s *quotaBaseAPIKeyRepoStub) Delete(context.Context, int64) error {
 	panic("unexpected Delete call")

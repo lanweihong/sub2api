@@ -1064,6 +1064,12 @@ func (r *stubAPIKeyRepoForHandler) SetBoundGroups(ctx context.Context, apiKeyID 
 func (r *stubAPIKeyRepoForHandler) GetBoundGroups(ctx context.Context, apiKeyID int64) ([]service.APIKeyGroup, error) {
 	return nil, nil
 }
+func (r *stubAPIKeyRepoForHandler) CreateWithBoundGroups(ctx context.Context, key *service.APIKey, bindings []service.APIKeyGroupBinding) error {
+	return nil
+}
+func (r *stubAPIKeyRepoForHandler) UpdateWithBoundGroups(ctx context.Context, key *service.APIKey, bindings *[]service.APIKeyGroupBinding) error {
+	return nil
+}
 func (r *stubAPIKeyRepoForHandler) MigrateBoundGroupsByUserAndGroup(ctx context.Context, userID, oldGroupID, newGroupID int64) (int64, error) {
 	return 0, nil
 }
@@ -2232,8 +2238,30 @@ func (s *stubSoraClientForHandler) GetVideoTask(_ context.Context, _ *service.Ac
 // newMinimalGatewayService 创建仅包含 accountRepo 的最小 GatewayService（用于测试 SelectAccountForModel）。
 func newMinimalGatewayService(accountRepo service.AccountRepository) *service.GatewayService {
 	return service.NewGatewayService(
-		accountRepo, nil, nil, nil, nil, nil, nil, nil, nil,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		accountRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
 	)
 }
 

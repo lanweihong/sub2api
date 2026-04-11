@@ -35,6 +35,9 @@ type fakeGoogleSubscriptionRepo struct {
 func (f fakeAPIKeyRepo) Create(ctx context.Context, key *service.APIKey) error {
 	return errors.New("not implemented")
 }
+func (f fakeAPIKeyRepo) CreateWithBoundGroups(ctx context.Context, key *service.APIKey, bindings []service.APIKeyGroupBinding) error {
+	return errors.New("not implemented")
+}
 func (f fakeAPIKeyRepo) GetByID(ctx context.Context, id int64) (*service.APIKey, error) {
 	return nil, errors.New("not implemented")
 }
@@ -51,6 +54,9 @@ func (f fakeAPIKeyRepo) GetByKeyForAuth(ctx context.Context, key string) (*servi
 	return f.GetByKey(ctx, key)
 }
 func (f fakeAPIKeyRepo) Update(ctx context.Context, key *service.APIKey) error {
+	return errors.New("not implemented")
+}
+func (f fakeAPIKeyRepo) UpdateWithBoundGroups(ctx context.Context, key *service.APIKey, bindings *[]service.APIKeyGroupBinding) error {
 	return errors.New("not implemented")
 }
 func (f fakeAPIKeyRepo) Delete(ctx context.Context, id int64) error {
