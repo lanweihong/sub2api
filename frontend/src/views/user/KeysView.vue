@@ -1679,7 +1679,8 @@ const handleSubmit = async () => {
     if (showEditModal.value && selectedKey.value) {
       const updatePayload: UpdateApiKeyRequest = {
         name: formData.value.name,
-        group_id: formData.value.enable_multi_group ? null : formData.value.group_id,
+        group_id: formData.value.enable_multi_group ? undefined : formData.value.group_id,
+        clear_group_id: formData.value.enable_multi_group ? true : undefined, // 启用多分组时显式清空主分组
         status: formData.value.status,
         ip_whitelist: ipWhitelist,
         ip_blacklist: ipBlacklist,
