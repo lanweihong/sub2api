@@ -914,12 +914,42 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	var groupID *int64
 	var platform string
 
-	if apiKey != nil && apiKey.Group != nil {
-		groupID = &apiKey.Group.ID
-		platform = apiKey.Group.Platform
-	}
 	if forcedPlatform, ok := middleware2.GetForcePlatformFromContext(c); ok && strings.TrimSpace(forcedPlatform) != "" {
 		platform = forcedPlatform
+	}
+
+	// 多分组 Key：聚合所有绑定分组的模型并集
+	if apiKey != nil && apiKey.HasBoundGroups() {
+		availableModels := h.getMultiGroupModels(c.Request.Context(), apiKey, platform)
+		if len(availableModels) > 0 {
+			models := make([]claude.Model, 0, len(availableModels))
+			for _, modelID := range availableModels {
+				models = append(models, claude.Model{
+					ID:          modelID,
+					Type:        "model",
+					DisplayName: modelID,
+					CreatedAt:   "2024-01-01T00:00:00Z",
+				})
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"object": "list",
+				"data":   models,
+			})
+			return
+		}
+		// 多分组 Key 没有可用模型时，返回空列表（不回退到全局模型）
+		c.JSON(http.StatusOK, gin.H{
+			"object": "list",
+			"data":   []claude.Model{},
+		})
+		return
+	}
+
+	if apiKey != nil && apiKey.Group != nil {
+		groupID = &apiKey.Group.ID
+		if platform == "" {
+			platform = apiKey.Group.Platform
+		}
 	}
 
 	if platform == service.PlatformSora {
@@ -964,6 +994,29 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		"object": "list",
 		"data":   claude.DefaultModels,
 	})
+}
+
+// getMultiGroupModels 聚合多分组 Key 的所有绑定分组模型并集
+func (h *GatewayHandler) getMultiGroupModels(ctx context.Context, apiKey *service.APIKey, forcePlatform string) []string {
+	modelSet := make(map[string]struct{})
+	for _, bg := range apiKey.BoundGroups {
+		if bg.Group == nil || !bg.Group.IsActive() {
+			continue
+		}
+		if forcePlatform != "" && bg.Group.Platform != forcePlatform {
+			continue
+		}
+		models := h.gatewayService.GetAvailableModels(ctx, &bg.GroupID, forcePlatform)
+		for _, m := range models {
+			modelSet[m] = struct{}{}
+		}
+	}
+
+	result := make([]string, 0, len(modelSet))
+	for m := range modelSet {
+		result = append(result, m)
+	}
+	return result
 }
 
 // AntigravityModels 返回 Antigravity 支持的全部模型
@@ -1483,6 +1536,12 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 	parsedReq, err := service.ParseGatewayRequest(body, domain.PlatformAnthropic)
 	if err != nil {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
+		return
+	}
+	apiKey, err = resolveMultiGroupIfNeeded(c, apiKey, parsedReq.Model)
+	if err != nil {
+		reqLog.Warn("gateway.count_tokens_multi_group_resolve_failed", zap.Error(err))
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "No group matches the requested model: "+parsedReq.Model)
 		return
 	}
 	// count_tokens 走 messages 严格校验时，复用已解析请求，避免二次反序列化。
