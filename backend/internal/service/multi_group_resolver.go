@@ -16,7 +16,7 @@ var (
 // Resolution priority:
 //  1. If the key has no bound groups and no legacy group_id, return nil (no group).
 //  2. If the key has only the legacy group_id (no bound groups), return that group (backward compat).
-//  3. If the key has exactly one bound group, return it directly.
+//  3. If the key has exactly one bound group, return it when the bound group is active.
 //  4. If the key has multiple bound groups, match by model patterns and return the
 //     highest-priority (lowest priority value) matching group.
 //
@@ -31,16 +31,23 @@ func ResolveGroupForModel(apiKey *APIKey, requestedModel string) (*Group, error)
 	// Case 2: Single bound group — return directly (no model matching needed)
 	if len(apiKey.BoundGroups) == 1 {
 		bg := &apiKey.BoundGroups[0]
-		if bg.Group == nil {
-			return apiKey.Group, nil // fallback to legacy
+		if bg.Group != nil && bg.Group.IsActive() {
+			return bg.Group, nil
 		}
-		return bg.Group, nil
+		return nil, ErrNoGroupMatchForModel
 	}
 
 	// Case 3: Multiple bound groups — match by model
 	if requestedModel == "" {
-		// No model specified: return the highest priority group
-		return apiKey.BoundGroups[0].Group, nil // already sorted by priority from DB
+		// No model specified: return the highest priority active group
+		for i := range apiKey.BoundGroups {
+			bg := &apiKey.BoundGroups[i]
+			if bg.Group == nil || !bg.Group.IsActive() {
+				continue
+			}
+			return bg.Group, nil
+		}
+		return nil, ErrNoGroupMatchForModel
 	}
 
 	// Find all matching groups, sorted by priority (already sorted from DB query)
