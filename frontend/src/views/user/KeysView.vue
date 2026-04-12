@@ -410,135 +410,12 @@
         </div>
 
         <div>
-          <div class="flex items-center justify-between mb-1">
-            <label class="input-label mb-0">{{ t('keys.groupLabel') }}</label>
-            <button
-              type="button"
-              @click="toggleMultiGroup"
-              :class="[
-                'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
-                formData.enable_multi_group ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
-              ]"
-              :title="t('keys.multiGroup.enable')"
-            >
-              <span
-                :class="[
-                  'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-                  formData.enable_multi_group ? 'translate-x-4' : 'translate-x-0'
-                ]"
-              />
-            </button>
-          </div>
-          <p v-if="formData.enable_multi_group" class="input-hint mb-2">{{ t('keys.multiGroup.hint') }}</p>
-
-          <!-- Single group selector (when multi-group is disabled) -->
-          <Select
-            v-if="!formData.enable_multi_group"
-            v-model="formData.group_id"
+          <label class="input-label">{{ t('keys.groupLabel') }}</label>
+          <MultiGroupSelect
+            v-model="formData.selected_groups"
             :options="groupOptions"
-            :placeholder="t('keys.selectGroup')"
-            :searchable="true"
-            :search-placeholder="t('keys.searchGroup')"
             data-tour="key-form-group"
-          >
-            <template #selected="{ option }">
-              <GroupBadge
-                v-if="option"
-                :name="(option as unknown as GroupOption).label"
-                :platform="(option as unknown as GroupOption).platform"
-                :subscription-type="(option as unknown as GroupOption).subscriptionType"
-                :rate-multiplier="(option as unknown as GroupOption).rate"
-                :user-rate-multiplier="(option as unknown as GroupOption).userRate"
-              />
-              <span v-else class="text-gray-400">{{ t('keys.selectGroup') }}</span>
-            </template>
-            <template #option="{ option, selected }">
-              <GroupOptionItem
-                :name="(option as unknown as GroupOption).label"
-                :platform="(option as unknown as GroupOption).platform"
-                :subscription-type="(option as unknown as GroupOption).subscriptionType"
-                :rate-multiplier="(option as unknown as GroupOption).rate"
-                :user-rate-multiplier="(option as unknown as GroupOption).userRate"
-                :description="(option as unknown as GroupOption).description"
-                :selected="selected"
-              />
-            </template>
-          </Select>
-
-          <!-- Multi-group binding UI -->
-          <div v-if="formData.enable_multi_group" class="space-y-3">
-            <div
-              v-for="(bg, idx) in formData.bound_groups"
-              :key="idx"
-              class="rounded-lg border border-gray-200 p-3 dark:border-dark-600"
-            >
-              <div class="flex items-center gap-2 mb-2">
-                <span class="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">
-                  #{{ idx + 1 }}
-                </span>
-                <Select
-                  v-model="bg.group_id"
-                  :options="multiGroupOptions(idx)"
-                  :placeholder="t('keys.multiGroup.noGroupSelected')"
-                  :searchable="true"
-                  :search-placeholder="t('keys.searchGroup')"
-                  class="flex-1"
-                >
-                  <template #selected="{ option }">
-                    <GroupBadge
-                      v-if="option"
-                      :name="(option as unknown as GroupOption).label"
-                      :platform="(option as unknown as GroupOption).platform"
-                      :subscription-type="(option as unknown as GroupOption).subscriptionType"
-                      :rate-multiplier="(option as unknown as GroupOption).rate"
-                      :user-rate-multiplier="(option as unknown as GroupOption).userRate"
-                    />
-                    <span v-else class="text-gray-400">{{ t('keys.multiGroup.noGroupSelected') }}</span>
-                  </template>
-                  <template #option="{ option, selected }">
-                    <GroupOptionItem
-                      :name="(option as unknown as GroupOption).label"
-                      :platform="(option as unknown as GroupOption).platform"
-                      :subscription-type="(option as unknown as GroupOption).subscriptionType"
-                      :rate-multiplier="(option as unknown as GroupOption).rate"
-                      :user-rate-multiplier="(option as unknown as GroupOption).userRate"
-                      :description="(option as unknown as GroupOption).description"
-                      :selected="selected"
-                    />
-                  </template>
-                </Select>
-                <button
-                  type="button"
-                  @click="formData.bound_groups.splice(idx, 1)"
-                  class="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20"
-                  :title="t('keys.multiGroup.removeGroup')"
-                >
-                  <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              <div class="flex items-center gap-2">
-                <label class="text-xs text-gray-500 dark:text-gray-400 shrink-0">{{ t('keys.multiGroup.modelPatterns') }}</label>
-                <input
-                  v-model="bg.model_patterns"
-                  type="text"
-                  class="input text-xs py-1"
-                  :placeholder="t('keys.multiGroup.modelPatternsPlaceholder')"
-                />
-              </div>
-            </div>
-            <button
-              type="button"
-              @click="formData.bound_groups.push({ group_id: null, priority: formData.bound_groups.length, model_patterns: '' })"
-              class="flex w-full items-center justify-center gap-1 rounded-lg border-2 border-dashed border-gray-300 py-2 text-sm text-gray-500 transition-colors hover:border-primary-400 hover:text-primary-600 dark:border-dark-500 dark:text-gray-400 dark:hover:border-primary-500 dark:hover:text-primary-400"
-            >
-              <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
-              </svg>
-              {{ t('keys.multiGroup.addGroup') }}
-            </button>
-          </div>
+          />
         </div>
 
         <!-- Custom Key Section (only for create) -->
@@ -1155,6 +1032,8 @@ import DataTable from '@/components/common/DataTable.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import GroupBadge from '@/components/common/GroupBadge.vue'
 import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
+import MultiGroupSelect from '@/components/common/MultiGroupSelect.vue'
+import type { SelectedGroup } from '@/components/common/MultiGroupSelect.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import SearchInput from '@/components/common/SearchInput.vue'
 import Select from '@/components/common/Select.vue'
@@ -1168,7 +1047,7 @@ import { useClipboard } from '@/composables/useClipboard'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { useAppStore } from '@/stores/app'
 import { useOnboardingStore } from '@/stores/onboarding'
-import type { ApiKey, ApiKeyBoundGroupBinding, Group, GroupPlatform, PublicSettings, SubscriptionType, UpdateApiKeyRequest } from '@/types'
+import type { ApiKey, ApiKeyBoundGroupBinding, Group, PublicSettings, UpdateApiKeyRequest } from '@/types'
 import { formatDateTime } from '@/utils/format'
 import { computed, onMounted, onUnmounted, ref, type ComponentPublicInstance } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -1180,16 +1059,6 @@ const formatDateTimeLocal = (isoDate: string): string => {
   const date = new Date(isoDate)
   const pad = (n: number) => n.toString().padStart(2, '0')
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
-
-interface GroupOption {
-  value: number
-  label: string
-  description: string | null
-  rate: number
-  userRate: number | null
-  subscriptionType: SubscriptionType
-  platform: GroupPlatform
 }
 
 const appStore = useAppStore()
@@ -1263,7 +1132,7 @@ const setGroupButtonRef = (keyId: number, el: Element | ComponentPublicInstance 
 
 const formData = ref({
   name: '',
-  group_id: null as number | null,
+  selected_groups: [] as SelectedGroup[],
   status: 'active' as 'active' | 'inactive',
   use_custom_key: false,
   custom_key: '',
@@ -1281,9 +1150,8 @@ const formData = ref({
   enable_expiration: false,
   expiration_preset: '30' as '7' | '30' | '90' | 'custom',
   expiration_date: '',
-  // Multi-group settings
-  enable_multi_group: false,
-  bound_groups: [] as { group_id: number | null; priority: number; model_patterns: string }[]
+  // 编辑时原始 key 是否有 bound_groups，用于保持存储语义不降级
+  _had_bound_groups: false,
 })
 
 // 自定义Key验证
@@ -1349,31 +1217,6 @@ const groupOptions = computed(() =>
     platform: group.platform
   }))
 )
-
-// Multi-group options: exclude already-selected groups (except current row)
-const multiGroupOptions = (currentIdx: number) => {
-  const selectedIds = new Set(
-    formData.value.bound_groups
-      .filter((_, i) => i !== currentIdx)
-      .map(bg => bg.group_id)
-      .filter((id): id is number => id !== null)
-  )
-  return groupOptions.value.filter(opt => !selectedIds.has(opt.value))
-}
-
-const toggleMultiGroup = () => {
-  formData.value.enable_multi_group = !formData.value.enable_multi_group
-  if (formData.value.enable_multi_group && formData.value.bound_groups.length === 0) {
-    // Seed with current single group if set
-    if (formData.value.group_id !== null) {
-      formData.value.bound_groups.push({
-        group_id: formData.value.group_id,
-        priority: 0,
-        model_patterns: ''
-      })
-    }
-  }
-}
 
 // Group dropdown search
 const groupSearchQuery = ref('')
@@ -1503,9 +1346,22 @@ const editKey = (key: ApiKey) => {
   const hasIPRestriction = (key.ip_whitelist?.length > 0) || (key.ip_blacklist?.length > 0)
   const hasExpiration = !!key.expires_at
   const hasBoundGroups = (key.bound_groups?.length ?? 0) > 0
+
+  // Build selected_groups from either bound_groups or single group_id
+  let selectedGroups: SelectedGroup[] = []
+  if (hasBoundGroups) {
+    selectedGroups = key.bound_groups!.map(bg => ({
+      group_id: bg.group_id,
+      priority: bg.priority,
+      model_patterns: (bg.model_patterns || []).join(',')
+    }))
+  } else if (key.group_id !== null && key.group_id !== undefined) {
+    selectedGroups = [{ group_id: key.group_id, priority: 0, model_patterns: '' }]
+  }
+
   formData.value = {
     name: key.name,
-    group_id: key.group_id,
+    selected_groups: selectedGroups,
     status: key.status === 'quota_exhausted' || key.status === 'expired' ? 'inactive' : key.status,
     use_custom_key: false,
     custom_key: '',
@@ -1521,14 +1377,7 @@ const editKey = (key: ApiKey) => {
     enable_expiration: hasExpiration,
     expiration_preset: 'custom',
     expiration_date: key.expires_at ? formatDateTimeLocal(key.expires_at) : '',
-    enable_multi_group: hasBoundGroups,
-    bound_groups: hasBoundGroups
-      ? key.bound_groups!.map(bg => ({
-          group_id: bg.group_id,
-          priority: bg.priority,
-          model_patterns: (bg.model_patterns || []).join(',')
-        }))
-      : []
+    _had_bound_groups: hasBoundGroups,
   }
   showEditModal.value = true
 }
@@ -1606,8 +1455,12 @@ const confirmDelete = (key: ApiKey) => {
 }
 
 const handleSubmit = async () => {
-  // Validate group_id is required (unless multi-group is enabled)
-  if (!formData.value.enable_multi_group && formData.value.group_id === null) {
+  const groups = formData.value.selected_groups
+  // 保持 bound_groups 语义：原始 key 有 bound_groups 或当前选了 ≥2 个分组时走多分组模式
+  const useMultiGroupMode = groups.length > 1 || (groups.length === 1 && formData.value._had_bound_groups)
+
+  // Validate: at least one group must be selected
+  if (groups.length === 0) {
     appStore.showError(t('keys.groupRequired'))
     return
   }
@@ -1661,26 +1514,21 @@ const handleSubmit = async () => {
 
   submitting.value = true
   try {
-    // 构建多分组绑定数据
+    // Build bound_groups bindings for multi-group scenario
     let boundGroupBindings: ApiKeyBoundGroupBinding[] | undefined
-    if (formData.value.enable_multi_group && formData.value.bound_groups.length > 0) {
-      const bindings = formData.value.bound_groups
-        .filter(bg => bg.group_id !== null)
-        .map((bg, idx) => ({
-          group_id: bg.group_id!,
-          priority: bg.priority ?? idx,
-          model_patterns: bg.model_patterns ? bg.model_patterns.split(',').map(s => s.trim()).filter(Boolean) : undefined,
-        }))
-      if (bindings.length > 0) {
-        boundGroupBindings = bindings
-      }
+    if (useMultiGroupMode) {
+      boundGroupBindings = groups.map((bg, idx) => ({
+        group_id: bg.group_id,
+        priority: bg.priority ?? idx,
+        model_patterns: bg.model_patterns ? bg.model_patterns.split(',').map(s => s.trim()).filter(Boolean) : undefined,
+      }))
     }
 
     if (showEditModal.value && selectedKey.value) {
       const updatePayload: UpdateApiKeyRequest = {
         name: formData.value.name,
-        group_id: formData.value.enable_multi_group ? undefined : formData.value.group_id,
-        clear_group_id: formData.value.enable_multi_group ? true : undefined, // 启用多分组时显式清空主分组
+        group_id: useMultiGroupMode ? undefined : groups[0]?.group_id,
+        clear_group_id: useMultiGroupMode ? true : undefined,
         status: formData.value.status,
         ip_whitelist: ipWhitelist,
         ip_blacklist: ipBlacklist,
@@ -1690,11 +1538,13 @@ const handleSubmit = async () => {
         rate_limit_1d: rateLimitData.rate_limit_1d,
         rate_limit_7d: rateLimitData.rate_limit_7d,
       }
-      // 多分组绑定：启用时传绑定数组，禁用时传空数组清空
-      if (formData.value.enable_multi_group) {
+      if (useMultiGroupMode) {
         updatePayload.bound_groups = boundGroupBindings ?? []
-      } else if (selectedKey.value?.bound_groups?.length) {
-        updatePayload.bound_groups = []
+      } else {
+        // Single group: clear any previous bound_groups
+        if (selectedKey.value?.bound_groups?.length) {
+          updatePayload.bound_groups = []
+        }
       }
       await keysAPI.update(selectedKey.value.id, updatePayload)
       appStore.showSuccess(t('keys.keyUpdatedSuccess'))
@@ -1702,7 +1552,7 @@ const handleSubmit = async () => {
       const customKey = formData.value.use_custom_key ? formData.value.custom_key : undefined
       await keysAPI.create(
         formData.value.name,
-        formData.value.enable_multi_group ? null : formData.value.group_id,
+        useMultiGroupMode ? null : groups[0].group_id,
         customKey,
         ipWhitelist,
         ipBlacklist,
@@ -1754,7 +1604,7 @@ const closeModals = () => {
   selectedKey.value = null
   formData.value = {
     name: '',
-    group_id: null,
+    selected_groups: [],
     status: 'active',
     use_custom_key: false,
     custom_key: '',
@@ -1770,8 +1620,7 @@ const closeModals = () => {
     enable_expiration: false,
     expiration_preset: '30',
     expiration_date: '',
-    enable_multi_group: false,
-    bound_groups: []
+    _had_bound_groups: false,
   }
 }
 
