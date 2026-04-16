@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -370,18 +371,25 @@ func (r *apiKeyRepository) Update(ctx context.Context, key *service.APIKey) erro
 // bindings 为 nil 时不更新绑定，为空切片时清空所有绑定，非空时替换绑定。
 func (r *apiKeyRepository) UpdateWithBoundGroups(ctx context.Context, key *service.APIKey, bindings *[]service.APIKeyGroupBinding) error {
 	tx, err := r.client.Tx(ctx)
-	if err != nil {
+	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
+
+	var txClient *dbent.Client
+	if err == nil {
+		defer func() {
+			if err != nil {
+				_ = tx.Rollback()
+			}
+		}()
+		txClient = tx.Client()
+	} else {
+		txClient = clientFromContext(ctx, r.client)
+	}
 
 	// 1. 更新主表记录
 	now := time.Now()
-	builder := tx.APIKey.Update().
+	builder := txClient.APIKey.Update().
 		Where(apikey.IDEQ(key.ID), apikey.DeletedAtIsNil()).
 		SetName(key.Name).
 		SetStatus(key.Status).
@@ -446,7 +454,7 @@ func (r *apiKeyRepository) UpdateWithBoundGroups(ctx context.Context, key *servi
 	// 2. 更新绑定记录（bindings 为 nil 时跳过）
 	if bindings != nil {
 		// 删除旧绑定
-		_, err = tx.APIKeyGroup.Delete().
+		_, err = txClient.APIKeyGroup.Delete().
 			Where(apikeygroup.APIKeyID(key.ID)).
 			Exec(ctx)
 		if err != nil {
@@ -457,7 +465,7 @@ func (r *apiKeyRepository) UpdateWithBoundGroups(ctx context.Context, key *servi
 		if len(*bindings) > 0 {
 			builders := make([]*dbent.APIKeyGroupCreate, 0, len(*bindings))
 			for _, b := range *bindings {
-				bb := tx.APIKeyGroup.Create().
+				bb := txClient.APIKeyGroup.Create().
 					SetAPIKeyID(key.ID).
 					SetGroupID(b.GroupID).
 					SetPriority(b.Priority)
@@ -472,8 +480,10 @@ func (r *apiKeyRepository) UpdateWithBoundGroups(ctx context.Context, key *servi
 		}
 	}
 
-	if err = tx.Commit(); err != nil {
-		return err
+	if tx != nil {
+		if err = tx.Commit(); err != nil {
+			return err
+		}
 	}
 	return nil
 }

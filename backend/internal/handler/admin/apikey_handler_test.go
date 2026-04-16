@@ -117,6 +117,37 @@ func TestAdminAPIKeyHandler_UpdateGroup_Unbind(t *testing.T) {
 	require.Nil(t, resp.Data.APIKey.GroupID)
 }
 
+func TestAdminAPIKeyHandler_UpdateGroup_BoundGroups(t *testing.T) {
+	router := setupAPIKeyHandler(newStubAdminService())
+	body := `{"clear_group_id":true,"bound_groups":[{"group_id":2,"priority":0,"model_patterns":["claude-*"]}]}`
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/api-keys/10", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Data struct {
+			APIKey struct {
+				GroupID     *int64 `json:"group_id"`
+				BoundGroups []struct {
+					GroupID       int64    `json:"group_id"`
+					Priority      int      `json:"priority"`
+					ModelPatterns []string `json:"model_patterns"`
+				} `json:"bound_groups"`
+			} `json:"api_key"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Nil(t, resp.Data.APIKey.GroupID)
+	require.Len(t, resp.Data.APIKey.BoundGroups, 1)
+	require.Equal(t, int64(2), resp.Data.APIKey.BoundGroups[0].GroupID)
+	require.Equal(t, 0, resp.Data.APIKey.BoundGroups[0].Priority)
+	require.Equal(t, []string{"claude-*"}, resp.Data.APIKey.BoundGroups[0].ModelPatterns)
+}
+
 func TestAdminAPIKeyHandler_UpdateGroup_ServiceError(t *testing.T) {
 	svc := &failingUpdateGroupService{
 		stubAdminService: newStubAdminService(),

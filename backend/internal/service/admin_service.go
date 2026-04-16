@@ -28,6 +28,7 @@ type AdminService interface {
 	DeleteUser(ctx context.Context, id int64) error
 	UpdateUserBalance(ctx context.Context, userID int64, balance float64, operation string, notes string) (*User, error)
 	GetUserAPIKeys(ctx context.Context, userID int64, page, pageSize int) ([]APIKey, int64, error)
+	GetUserAvailableGroups(ctx context.Context, userID int64) ([]Group, error)
 	GetUserUsageStats(ctx context.Context, userID int64, period string) (any, error)
 	// GetUserBalanceHistory returns paginated balance/concurrency change records for a user.
 	// codeType is optional - pass empty string to return all types.
@@ -49,6 +50,7 @@ type AdminService interface {
 	UpdateGroupSortOrders(ctx context.Context, updates []GroupSortOrderUpdate) error
 
 	// API Key management (admin)
+	AdminUpdateAPIKey(ctx context.Context, keyID int64, input *AdminUpdateAPIKeyInput) (*AdminUpdateAPIKeyResult, error)
 	AdminUpdateAPIKeyGroupID(ctx context.Context, keyID int64, groupID *int64) (*AdminUpdateAPIKeyGroupIDResult, error)
 
 	// ReplaceUserGroup 替换用户的专属分组：授予新分组权限、迁移 Key、移除旧分组权限
@@ -276,13 +278,24 @@ type BulkUpdateAccountResult struct {
 	Error     string `json:"error,omitempty"`
 }
 
-// AdminUpdateAPIKeyGroupIDResult is the result of AdminUpdateAPIKeyGroupID.
-type AdminUpdateAPIKeyGroupIDResult struct {
+type AdminUpdateAPIKeyInput struct {
+	GroupID      *int64
+	ClearGroupID bool
+	BoundGroups  *[]APIKeyGroupBinding
+}
+
+// AdminUpdateAPIKeyResult is the result of admin API key binding updates.
+type AdminUpdateAPIKeyResult struct {
 	APIKey                 *APIKey
 	AutoGrantedGroupAccess bool   // true if a new exclusive group permission was auto-added
 	GrantedGroupID         *int64 // the group ID that was auto-granted
 	GrantedGroupName       string // the group name that was auto-granted
+	GrantedGroupIDs        []int64
+	GrantedGroupNames      []string
 }
+
+// AdminUpdateAPIKeyGroupIDResult keeps backward compatibility for single-group admin updates.
+type AdminUpdateAPIKeyGroupIDResult = AdminUpdateAPIKeyResult
 
 // ReplaceUserGroupResult 分组替换操作的结果
 type ReplaceUserGroupResult struct {
@@ -790,6 +803,42 @@ func (s *adminServiceImpl) GetUserAPIKeys(ctx context.Context, userID int64, pag
 		return nil, 0, err
 	}
 	return keys, result.Total, nil
+}
+
+func (s *adminServiceImpl) GetUserAvailableGroups(ctx context.Context, userID int64) ([]Group, error) {
+	if _, err := s.userRepo.GetByID(ctx, userID); err != nil {
+		return nil, err
+	}
+
+	allGroups, err := s.groupRepo.ListActive(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	subscribedGroupIDs := make(map[int64]struct{})
+	if s.userSubRepo != nil {
+		activeSubscriptions, err := s.userSubRepo.ListActiveByUserID(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		for _, sub := range activeSubscriptions {
+			subscribedGroupIDs[sub.GroupID] = struct{}{}
+		}
+	}
+
+	availableGroups := make([]Group, 0, len(allGroups))
+	for _, group := range allGroups {
+		if group.IsSubscriptionType() {
+			if _, ok := subscribedGroupIDs[group.ID]; ok {
+				availableGroups = append(availableGroups, group)
+			}
+			continue
+		}
+		// 管理员允许为用户配置任意标准分组；专属标准分组在保存时自动补 allowed_groups。
+		availableGroups = append(availableGroups, group)
+	}
+
+	return availableGroups, nil
 }
 
 func (s *adminServiceImpl) GetUserUsageStats(ctx context.Context, userID int64, period string) (any, error) {
@@ -1339,6 +1388,143 @@ func (s *adminServiceImpl) BatchSetGroupRateMultipliers(ctx context.Context, gro
 
 func (s *adminServiceImpl) UpdateGroupSortOrders(ctx context.Context, updates []GroupSortOrderUpdate) error {
 	return s.groupRepo.UpdateSortOrders(ctx, updates)
+}
+
+func (s *adminServiceImpl) AdminUpdateAPIKey(ctx context.Context, keyID int64, input *AdminUpdateAPIKeyInput) (*AdminUpdateAPIKeyResult, error) {
+	apiKey, err := s.apiKeyRepo.GetByID(ctx, keyID)
+	if err != nil {
+		return nil, err
+	}
+	if input == nil {
+		return &AdminUpdateAPIKeyResult{APIKey: apiKey}, nil
+	}
+
+	normalized := *input
+	if normalized.GroupID != nil {
+		switch {
+		case *normalized.GroupID < 0:
+			return nil, infraerrors.BadRequest("INVALID_GROUP_ID", "group_id must be non-negative")
+		case *normalized.GroupID == 0:
+			normalized.GroupID = nil
+			normalized.ClearGroupID = true
+		}
+	}
+	if normalized.BoundGroups != nil {
+		for _, binding := range *normalized.BoundGroups {
+			if binding.GroupID <= 0 {
+				return nil, infraerrors.BadRequest("INVALID_GROUP_ID", "bound_groups.group_id must be positive")
+			}
+		}
+	}
+	if normalized.GroupID == nil && !normalized.ClearGroupID && normalized.BoundGroups == nil {
+		return &AdminUpdateAPIKeyResult{APIKey: apiKey}, nil
+	}
+
+	targetGroupIDs := make([]int64, 0, 1)
+	seen := make(map[int64]struct{})
+	if normalized.GroupID != nil {
+		targetGroupIDs = append(targetGroupIDs, *normalized.GroupID)
+		seen[*normalized.GroupID] = struct{}{}
+	}
+	if normalized.BoundGroups != nil {
+		for _, binding := range *normalized.BoundGroups {
+			if _, ok := seen[binding.GroupID]; ok {
+				continue
+			}
+			seen[binding.GroupID] = struct{}{}
+			targetGroupIDs = append(targetGroupIDs, binding.GroupID)
+		}
+	}
+
+	targetGroups := make([]*Group, 0, len(targetGroupIDs))
+	autoGrantGroups := make([]*Group, 0, len(targetGroupIDs))
+	for _, groupID := range targetGroupIDs {
+		group, err := s.groupRepo.GetByID(ctx, groupID)
+		if err != nil {
+			return nil, err
+		}
+		if group.Status != StatusActive {
+			return nil, infraerrors.BadRequest("GROUP_NOT_ACTIVE", "target group is not active")
+		}
+		if group.IsSubscriptionType() && s.userSubRepo == nil {
+			return nil, infraerrors.InternalServer("SUBSCRIPTION_REPOSITORY_UNAVAILABLE", "subscription repository is not configured")
+		}
+		targetGroups = append(targetGroups, group)
+		if group.IsExclusive && !group.IsSubscriptionType() {
+			autoGrantGroups = append(autoGrantGroups, group)
+		}
+	}
+
+	opCtx := ctx
+	var tx *dbent.Tx
+	if len(autoGrantGroups) > 0 {
+		if s.entClient == nil {
+			logger.LegacyPrintf("service.admin", "Warning: entClient is nil, skipping transaction protection for admin api key update")
+		} else {
+			tx, err = s.entClient.Tx(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("begin transaction: %w", err)
+			}
+			defer func() { _ = tx.Rollback() }()
+			opCtx = dbent.NewTxContext(ctx, tx)
+		}
+	}
+
+	grantedGroupIDs := make([]int64, 0, len(autoGrantGroups))
+	grantedGroupNames := make([]string, 0, len(autoGrantGroups))
+	for _, group := range autoGrantGroups {
+		if err := s.userRepo.AddGroupToAllowedGroups(opCtx, apiKey.UserID, group.ID); err != nil {
+			return nil, fmt.Errorf("add group to user allowed groups: %w", err)
+		}
+		grantedGroupIDs = append(grantedGroupIDs, group.ID)
+		grantedGroupNames = append(grantedGroupNames, group.Name)
+	}
+
+	apiKeyService := &APIKeyService{
+		apiKeyRepo:        s.apiKeyRepo,
+		userRepo:          s.userRepo,
+		groupRepo:         s.groupRepo,
+		userSubRepo:       s.userSubRepo,
+		userGroupRateRepo: s.userGroupRateRepo,
+	}
+	updateReq := UpdateAPIKeyRequest{
+		GroupID:      normalized.GroupID,
+		ClearGroupID: normalized.ClearGroupID,
+		BoundGroups:  normalized.BoundGroups,
+		IPWhitelist:  apiKey.IPWhitelist,
+		IPBlacklist:  apiKey.IPBlacklist,
+	}
+	updatedKey, err := apiKeyService.Update(opCtx, keyID, apiKey.UserID, updateReq)
+	if err != nil {
+		return nil, err
+	}
+
+	if tx != nil {
+		if err := tx.Commit(); err != nil {
+			return nil, fmt.Errorf("commit transaction: %w", err)
+		}
+	}
+
+	if s.authCacheInvalidator != nil {
+		s.authCacheInvalidator.InvalidateAuthCacheByKey(ctx, updatedKey.Key)
+	}
+
+	result := &AdminUpdateAPIKeyResult{
+		APIKey:            updatedKey,
+		GrantedGroupIDs:   grantedGroupIDs,
+		GrantedGroupNames: grantedGroupNames,
+	}
+	if len(grantedGroupIDs) > 0 {
+		result.AutoGrantedGroupAccess = true
+		result.GrantedGroupID = &grantedGroupIDs[0]
+		if len(grantedGroupNames) == 1 {
+			result.GrantedGroupName = grantedGroupNames[0]
+		} else {
+			result.GrantedGroupName = strings.Join(grantedGroupNames, ", ")
+		}
+	}
+
+	return result, nil
 }
 
 // AdminUpdateAPIKeyGroupID 管理员修改 API Key 分组绑定

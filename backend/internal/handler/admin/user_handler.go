@@ -308,6 +308,28 @@ func (h *UserHandler) GetUserAPIKeys(c *gin.Context) {
 	response.Paginated(c, out, total, page, pageSize)
 }
 
+// GetUserAvailableGroups handles getting groups an admin can assign to a user's API keys.
+// GET /api/v1/admin/users/:id/available-groups
+func (h *UserHandler) GetUserAvailableGroups(c *gin.Context) {
+	userID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid user ID")
+		return
+	}
+
+	groups, err := h.adminService.GetUserAvailableGroups(c.Request.Context(), userID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	out := make([]dto.Group, 0, len(groups))
+	for i := range groups {
+		out = append(out, *dto.GroupFromService(&groups[i]))
+	}
+	response.Success(c, out)
+}
+
 // GetUserUsage handles getting user's usage statistics
 // GET /api/v1/admin/users/:id/usage
 func (h *UserHandler) GetUserUsage(c *gin.Context) {

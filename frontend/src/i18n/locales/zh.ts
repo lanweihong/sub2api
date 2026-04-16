@@ -1419,6 +1419,8 @@ export default {
       userApiKeys: '用户 API 密钥',
       noApiKeys: '此用户暂无 API 密钥',
       group: '分组',
+      editApiKeyGroups: '编辑 API 密钥分组',
+      editApiKeyGroupsHint: '支持单分组和多分组。多分组时可为每个分组设置优先级和模型匹配规则。',
       none: '无',
       groupChangedSuccess: '分组修改成功',
       groupChangedWithGrant: '分组修改成功，已自动为用户添加「{group}」分组权限',

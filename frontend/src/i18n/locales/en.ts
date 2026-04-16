@@ -1392,6 +1392,8 @@ export default {
       userApiKeys: 'User API Keys',
       noApiKeys: 'This user has no API keys',
       group: 'Group',
+      editApiKeyGroups: 'Edit API Key Groups',
+      editApiKeyGroupsHint: 'Supports both single-group and multi-group bindings. Multi-group mode also lets you set priority and model patterns.',
       none: 'None',
       groupChangedSuccess: 'Group updated successfully',
       groupChangedWithGrant: 'Group updated. User auto-granted access to "{group}"',

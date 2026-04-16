@@ -136,6 +136,10 @@ func (s *stubAdminService) GetUserAPIKeys(ctx context.Context, userID int64, pag
 	return s.apiKeys, int64(len(s.apiKeys)), nil
 }
 
+func (s *stubAdminService) GetUserAvailableGroups(ctx context.Context, userID int64) ([]service.Group, error) {
+	return s.groups, nil
+}
+
 func (s *stubAdminService) GetUserUsageStats(ctx context.Context, userID int64, period string) (any, error) {
 	return map[string]any{"user_id": userID}, nil
 }
@@ -433,6 +437,38 @@ func (s *stubAdminService) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 			}
 			return &service.AdminUpdateAPIKeyGroupIDResult{APIKey: &k}, nil
 		}
+	}
+	return nil, service.ErrAPIKeyNotFound
+}
+
+func (s *stubAdminService) AdminUpdateAPIKey(ctx context.Context, keyID int64, input *service.AdminUpdateAPIKeyInput) (*service.AdminUpdateAPIKeyResult, error) {
+	for i := range s.apiKeys {
+		if s.apiKeys[i].ID != keyID {
+			continue
+		}
+		k := s.apiKeys[i]
+		if input == nil {
+			return &service.AdminUpdateAPIKeyResult{APIKey: &k}, nil
+		}
+		if input.ClearGroupID {
+			k.GroupID = nil
+			k.Group = nil
+		}
+		if input.GroupID != nil {
+			gid := *input.GroupID
+			k.GroupID = &gid
+		}
+		if input.BoundGroups != nil {
+			k.BoundGroups = make([]service.APIKeyGroup, 0, len(*input.BoundGroups))
+			for _, binding := range *input.BoundGroups {
+				k.BoundGroups = append(k.BoundGroups, service.APIKeyGroup{
+					GroupID:       binding.GroupID,
+					Priority:      binding.Priority,
+					ModelPatterns: binding.ModelPatterns,
+				})
+			}
+		}
+		return &service.AdminUpdateAPIKeyResult{APIKey: &k}, nil
 	}
 	return nil, service.ErrAPIKeyNotFound
 }

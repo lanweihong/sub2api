@@ -4,7 +4,7 @@
  */
 
 import { apiClient } from '../client'
-import type { AdminUser, UpdateUserRequest, PaginatedResponse, ApiKey } from '@/types'
+import type { AdminUser, UpdateUserRequest, PaginatedResponse, ApiKey, Group } from '@/types'
 
 /**
  * List all users with pagination
@@ -155,6 +155,16 @@ export async function getUserApiKeys(id: number): Promise<PaginatedResponse<ApiK
 }
 
 /**
+ * Get groups that can be assigned to a user's API keys in admin view
+ * @param id - User ID
+ * @returns List of assignable groups
+ */
+export async function getUserAvailableGroups(id: number): Promise<Group[]> {
+  const { data } = await apiClient.get<Group[]>(`/admin/users/${id}/available-groups`)
+  return data
+}
+
+/**
  * Get user's usage statistics
  * @param id - User ID
  * @param period - Time period
@@ -254,6 +264,7 @@ export const usersAPI = {
   updateConcurrency,
   toggleStatus,
   getUserApiKeys,
+  getUserAvailableGroups,
   getUserUsageStats,
   getUserBalanceHistory,
   replaceGroup
