@@ -5,10 +5,12 @@ package service
 import (
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,8 +32,15 @@ func (u *compatHTTPUpstreamRecorder) DoWithTLS(req *http.Request, proxyURL strin
 	return u.Do(req, proxyURL, accountID, accountConcurrency)
 }
 
+func newAccountTestContext() (*gin.Context, *httptest.ResponseRecorder) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	return c, rec
+}
+
 func TestAccountTestService_AnthropicCompatZhipuUsesProviderDefaultBaseURL(t *testing.T) {
-	c, rec := newSoraTestContext()
+	c, rec := newAccountTestContext()
 	upstream := &compatHTTPUpstreamRecorder{
 		resp: newJSONResponse(http.StatusOK, `{"content":[{"type":"text","text":"ok"}]}`),
 	}
@@ -72,7 +81,7 @@ func TestAccountTestService_AnthropicCompatZhipuUsesProviderDefaultBaseURL(t *te
 }
 
 func TestAccountTestService_AnthropicCompatibleRequiresExplicitBaseURL(t *testing.T) {
-	c, rec := newSoraTestContext()
+	c, rec := newAccountTestContext()
 	upstream := &compatHTTPUpstreamRecorder{
 		resp: newJSONResponse(http.StatusOK, `{"content":[{"type":"text","text":"ok"}]}`),
 	}

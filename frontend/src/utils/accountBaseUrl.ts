@@ -18,7 +18,7 @@ export function requiresExplicitApiKeyBaseUrl(platform?: AccountPlatform | strin
 }
 
 export function getDefaultApiKeyBaseUrl(platform?: AccountPlatform | string | null): string {
-  if (platform === 'openai' || platform === 'sora') return 'https://api.openai.com'
+  if (platform === 'openai') return 'https://api.openai.com'
   if (platform === 'gemini') return 'https://generativelanguage.googleapis.com'
   if (platform === 'antigravity') return 'https://cloudcode-pa.googleapis.com'
   if (platform && isAnthropicCompatPlatform(platform)) {

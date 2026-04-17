@@ -140,8 +140,6 @@ func matchesPlatformHeuristic(platform, model string) bool {
 			strings.HasPrefix(modelLower, "chatgpt")
 	case "gemini":
 		return strings.HasPrefix(modelLower, "gemini")
-	case "sora":
-		return strings.HasPrefix(modelLower, "sora")
 	default:
 		return false
 	}

@@ -26,7 +26,6 @@ func TestIsAnthropicCompatPlatform(t *testing.T) {
 		{PlatformOpenAI, false, "OpenAI 平台"},
 		{PlatformGemini, false, "Gemini 平台"},
 		{PlatformAntigravity, false, "Antigravity 平台"},
-		{PlatformSora, false, "Sora 平台"},
 
 		// 边缘情况
 		{"", false, "空字符串"},
@@ -76,7 +75,6 @@ func TestOfficialPlatformsNotCompatPlatforms(t *testing.T) {
 		PlatformOpenAI,
 		PlatformGemini,
 		PlatformAntigravity,
-		PlatformSora,
 	}
 
 	for _, p := range officialPlatforms {

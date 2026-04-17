@@ -76,7 +76,6 @@ const platformLabel = computed(() => {
   if (props.platform === 'anthropic') return 'Anthropic'
   if (props.platform === 'openai') return 'OpenAI'
   if (props.platform === 'antigravity') return 'Antigravity'
-  if (props.platform === 'sora') return 'Sora'
   if (props.platform === 'anthropic-compatible') return t('admin.accounts.platforms.anthropic-compatible')
   if (props.platform === 'anthropic-zhipu') return t('admin.accounts.platforms.anthropic-zhipu')
   if (props.platform === 'anthropic-kimi') return t('admin.accounts.platforms.anthropic-kimi')
@@ -131,9 +130,6 @@ const platformClass = computed(() => {
   if (props.platform === 'antigravity') {
     return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
   }
-  if (props.platform === 'sora') {
-    return 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400'
-  }
   if (isAnthropicCompatPlatform(props.platform)) {
     return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
   }
@@ -149,9 +145,6 @@ const typeClass = computed(() => {
   }
   if (props.platform === 'antigravity') {
     return 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400'
-  }
-  if (props.platform === 'sora') {
-    return 'bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400'
   }
   if (isAnthropicCompatPlatform(props.platform)) {
     return 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'

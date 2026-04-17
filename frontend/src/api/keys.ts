@@ -17,7 +17,13 @@ import { apiClient } from './client';
 export async function list(
   page: number = 1,
   pageSize: number = 10,
-  filters?: { search?: string; status?: string; group_id?: number | string },
+  filters?: {
+    search?: string
+    status?: string
+    group_id?: number | string
+    sort_by?: string
+    sort_order?: 'asc' | 'desc'
+  },
   options?: {
     signal?: AbortSignal
   }
