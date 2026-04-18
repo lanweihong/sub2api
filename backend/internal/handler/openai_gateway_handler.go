@@ -1351,8 +1351,6 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					APIKeyService:      h.apiKeyService,
 					RequestPayload:     wsReqPayload,
 					RequestTruncated:   wsReqTruncated,
-					RequestPayload:     wsReqPayload,
-					RequestTruncated:   wsReqTruncated,
 					ChannelUsageFields: channelMappingWS.ToUsageFields(reqModel, result.UpstreamModel),
 				}); err != nil {
 					reqLog.Error("openai.websocket_record_usage_failed",
