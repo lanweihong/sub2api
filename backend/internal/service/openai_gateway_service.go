@@ -2996,7 +2996,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		if responseBuf != nil && responseBuf.Len() > 0 {
 			captured := responseBuf.Bytes()
 			if respTruncated {
-				captured, _ = TruncateBytesWithFlag(captured, int64(len(captured)))
+				captured = trimInvalidUTF8Tail(captured)
 			}
 			r.responseBody = make([]byte, len(captured))
 			copy(r.responseBody, captured)
@@ -3709,7 +3709,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			truncated := int64(responseBuf.Len()) >= captureMaxSize
 			// 流式截断可能在 UTF-8 多字节字符中间裁切，落库前统一做安全校正
 			if truncated {
-				captured, _ = TruncateBytesWithFlag(captured, int64(len(captured)))
+				captured = trimInvalidUTF8Tail(captured)
 			}
 			r.responseBody = make([]byte, len(captured))
 			copy(r.responseBody, captured)

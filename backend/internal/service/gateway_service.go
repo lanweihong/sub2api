@@ -6631,7 +6631,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 			captured := responseBuf.Bytes()
 			// 流式截断可能在 UTF-8 多字节字符中间裁切，落库前统一做安全校正
 			if respTruncated {
-				captured, _ = TruncateBytesWithFlag(captured, int64(len(captured)))
+				captured = trimInvalidUTF8Tail(captured)
 			}
 			sr.responseBody = make([]byte, len(captured))
 			copy(sr.responseBody, captured)

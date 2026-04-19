@@ -33,3 +33,17 @@ func stringPtrFromBytes(data []byte) *string {
 	s := string(data)
 	return &s
 }
+
+// trimInvalidUTF8Tail 修剪尾部不完整的 UTF-8 多字节序列。
+// 流式采样可能恰好截在多字节字符中间，用此函数确保结果是合法 UTF-8。
+func trimInvalidUTF8Tail(data []byte) []byte {
+	if utf8.Valid(data) {
+		return data
+	}
+	for i := len(data) - 1; i >= 0 && i >= len(data)-utf8.UTFMax; i-- {
+		if utf8.Valid(data[:i]) {
+			return data[:i]
+		}
+	}
+	return data
+}
