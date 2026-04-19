@@ -24,6 +24,8 @@ type AdminService interface {
 	ListUsers(ctx context.Context, page, pageSize int, filters UserListFilters, sortBy, sortOrder string) ([]User, int64, error)
 	GetUser(ctx context.Context, id int64) (*User, error)
 	CreateUser(ctx context.Context, input *CreateUserInput) (*User, error)
+	PreviewBatchUsers(ctx context.Context, names []string) ([]BatchUserPreviewItem, error)
+	CreateUsersBatch(ctx context.Context, input []BatchCreateUserInput) (*BatchCreateUsersResult, error)
 	UpdateUser(ctx context.Context, id int64, input *UpdateUserInput) (*User, error)
 	DeleteUser(ctx context.Context, id int64) error
 	UpdateUserBalance(ctx context.Context, userID int64, balance float64, operation string, notes string) (*User, error)

@@ -11,6 +11,8 @@ import (
 
 type stubAdminService struct {
 	users                []service.User
+	batchPreviewItems    []service.BatchUserPreviewItem
+	batchCreateResult    *service.BatchCreateUsersResult
 	apiKeys              []service.APIKey
 	groups               []service.Group
 	accounts             []service.Account
@@ -143,6 +145,45 @@ func (s *stubAdminService) GetUser(ctx context.Context, id int64) (*service.User
 func (s *stubAdminService) CreateUser(ctx context.Context, input *service.CreateUserInput) (*service.User, error) {
 	user := service.User{ID: 100, Email: input.Email, Status: service.StatusActive}
 	return &user, nil
+}
+
+func (s *stubAdminService) PreviewBatchUsers(ctx context.Context, names []string) ([]service.BatchUserPreviewItem, error) {
+	if len(s.batchPreviewItems) > 0 {
+		return s.batchPreviewItems, nil
+	}
+	items := make([]service.BatchUserPreviewItem, 0, len(names))
+	for i, name := range names {
+		items = append(items, service.BatchUserPreviewItem{
+			RowNo:       i + 1,
+			SourceName:  name,
+			Email:       "preview@example.com",
+			Password:    "pass1234",
+			Username:    "preview",
+			Balance:     9999,
+			Concurrency: 3,
+		})
+	}
+	return items, nil
+}
+
+func (s *stubAdminService) CreateUsersBatch(ctx context.Context, input []service.BatchCreateUserInput) (*service.BatchCreateUsersResult, error) {
+	if s.batchCreateResult != nil {
+		return s.batchCreateResult, nil
+	}
+	users := make([]service.BatchCreatedUserSummary, 0, len(input))
+	for _, item := range input {
+		users = append(users, service.BatchCreatedUserSummary{
+			RowNo:    item.RowNo,
+			ID:       int64(1000 + item.RowNo),
+			Email:    item.Email,
+			Username: item.Username,
+		})
+	}
+	return &service.BatchCreateUsersResult{
+		CreatedCount: len(input),
+		FailedCount:  0,
+		Users:        users,
+	}, nil
 }
 
 func (s *stubAdminService) UpdateUser(ctx context.Context, id int64, input *service.UpdateUserInput) (*service.User, error) {

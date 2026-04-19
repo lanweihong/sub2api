@@ -22,6 +22,8 @@ func setupAdminRouter() (*gin.Engine, *stubAdminService) {
 	redeemHandler := NewRedeemHandler(adminSvc, nil)
 
 	router.GET("/api/v1/admin/users", userHandler.List)
+	router.POST("/api/v1/admin/users/batch/preview", userHandler.PreviewBatch)
+	router.POST("/api/v1/admin/users/batch", userHandler.CreateBatch)
 	router.GET("/api/v1/admin/users/:id", userHandler.GetByID)
 	router.POST("/api/v1/admin/users", userHandler.Create)
 	router.PUT("/api/v1/admin/users/:id", userHandler.Update)
@@ -73,6 +75,29 @@ func TestUserHandlerEndpoints(t *testing.T) {
 
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/api/v1/admin/users/1", nil)
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	batchPreviewBody := map[string]any{"names": []string{"张三", "李四"}}
+	body, _ := json.Marshal(batchPreviewBody)
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/batch/preview", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	batchCreateBody := map[string]any{
+		"users": []map[string]any{
+			{
+				"row_no": 1, "source_name": "张三", "email": "zhangsan@xssio.com", "password": "pass1234",
+				"username": "zhangsan", "balance": 9999, "concurrency": 3,
+			},
+		},
+	}
+	body, _ = json.Marshal(batchCreateBody)
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/batch", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
 
