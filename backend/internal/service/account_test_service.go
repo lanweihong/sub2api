@@ -21,7 +21,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/service/anthropiccompat"
 	// 触发所有 Anthropic-compatible 渠道 Provider 的 init() 注册
 	_ "github.com/Wei-Shaw/sub2api/internal/service/anthropiccompat/providers"
