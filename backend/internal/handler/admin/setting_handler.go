@@ -1965,9 +1965,6 @@ type UpdatePayloadLoggingSettingsRequest struct {
 	RetentionDays   int   `json:"retention_days"`
 }
 
-	response.Success(c, service.PopulateWebSearchUsage(c.Request.Context(), cfg))
-}
-
 // UpdatePayloadLoggingSettings 更新报文审计记录配置
 // PUT /api/v1/admin/settings/payload-logging
 func (h *SettingHandler) UpdatePayloadLoggingSettings(c *gin.Context) {
