@@ -499,7 +499,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				if payloadCfg.Enabled {
 					reqPayload, reqTruncated = service.TruncateBytesWithFlag(body, payloadCfg.MaxRequestSize)
 					if result.ResponseBody != nil {
-						respPayload, respTruncated = service.TruncateBytesWithFlag(result.ResponseBody, payloadCfg.MaxResponseSize)
+						// service 层已按 captureMaxSize 截断，直接信任其结果
+						respPayload = result.ResponseBody
+						respTruncated = result.ResponseTruncated
 					} else if result.ResponseTruncated {
 						respTruncated = true
 					}
@@ -870,7 +872,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				if payloadCfg.Enabled {
 					reqPayload2, reqTruncated2 = service.TruncateBytesWithFlag(body, payloadCfg.MaxRequestSize)
 					if result.ResponseBody != nil {
-						respPayload2, respTruncated2 = service.TruncateBytesWithFlag(result.ResponseBody, payloadCfg.MaxResponseSize)
+						// service 层已按 captureMaxSize 截断，直接信任其结果
+						respPayload2 = result.ResponseBody
+						respTruncated2 = result.ResponseTruncated
 					} else if result.ResponseTruncated {
 						respTruncated2 = true
 					}

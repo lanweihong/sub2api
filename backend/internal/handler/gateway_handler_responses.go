@@ -275,7 +275,9 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 			if payloadCfg.Enabled {
 				reqPayload, reqTruncated = service.TruncateBytesWithFlag(body, payloadCfg.MaxRequestSize)
 				if result.ResponseBody != nil {
-					respPayload, respTruncated = service.TruncateBytesWithFlag(result.ResponseBody, payloadCfg.MaxResponseSize)
+					// service 层已按 captureMaxSize 截断，直接信任其结果
+					respPayload = result.ResponseBody
+					respTruncated = result.ResponseTruncated
 				} else if result.ResponseTruncated {
 					respTruncated = true
 				}
