@@ -383,27 +383,33 @@ Build and run from source code for development or customization.
 git clone https://github.com/Wei-Shaw/sub2api.git
 cd sub2api
 
-# 2. Install pnpm (if not already installed)
+# 2. If your network cannot reach proxy.golang.org, configure a reachable Go module proxy first
+go env -w GOPROXY=https://goproxy.cn,direct
+go env -w GOSUMDB=sum.golang.google.cn
+
+# 3. Install pnpm (if not already installed)
 npm install -g pnpm
 
-# 3. Build frontend
+# 4. Build frontend
 cd frontend
 pnpm install
 pnpm run build
 # Output will be in ../backend/internal/web/dist/
 
-# 4. Build backend with embedded frontend
+# 5. Build backend with embedded frontend
 cd ../backend
 go build -tags embed -o sub2api ./cmd/server
 
-# 5. Create configuration file
+# 6. Create configuration file
 cp ../deploy/config.example.yaml ./config.yaml
 
-# 6. Edit configuration
+# 7. Edit configuration
 nano config.yaml
 ```
 
 > **Note:** The `-tags embed` flag embeds the frontend into the binary. Without this flag, the binary will not serve the frontend UI.
+>
+> **Additional note:** GoLand also uses values written by `go env -w`. If the IDE has already failed once with the default proxy, resync the project or rebuild after applying the commands above.
 
 **Key configuration in `config.yaml`:**
 

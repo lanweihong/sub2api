@@ -394,27 +394,33 @@ rm -rf data/ postgres_data/ redis_data/
 git clone https://github.com/Wei-Shaw/sub2api.git
 cd sub2api
 
-# 2. 安装 pnpm（如果还没有安装）
+# 2. 如果当前网络无法访问 proxy.golang.org（中国大陆网络常见），先配置 Go 模块代理
+go env -w GOPROXY=https://goproxy.cn,direct
+go env -w GOSUMDB=sum.golang.google.cn
+
+# 3. 安装 pnpm（如果还没有安装）
 npm install -g pnpm
 
-# 3. 编译前端
+# 4. 编译前端
 cd frontend
 pnpm install
 pnpm run build
 # 构建产物输出到 ../backend/internal/web/dist/
 
-# 4. 编译后端（嵌入前端）
+# 5. 编译后端（嵌入前端）
 cd ../backend
 go build -tags embed -o sub2api ./cmd/server
 
-# 5. 创建配置文件
+# 6. 创建配置文件
 cp ../deploy/config.example.yaml ./config.yaml
 
-# 6. 编辑配置
+# 7. 编辑配置
 nano config.yaml
 ```
 
 > **注意：** `-tags embed` 参数会将前端嵌入到二进制文件中。不使用此参数编译的程序将不包含前端界面。
+>
+> **补充：** GoLand 默认也会继承 `go env -w` 写入的 `GOPROXY` 和 `GOSUMDB`。如果你之前在 IDE 中打开项目后已经报错过一次，执行完上述命令后重新同步项目或重新构建即可。
 
 **`config.yaml` 关键配置：**
 
