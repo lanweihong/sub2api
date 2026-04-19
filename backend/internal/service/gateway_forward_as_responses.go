@@ -171,12 +171,21 @@ func (s *GatewayService) ForwardAsResponses(
 	}
 
 	// 13. Handle normal response (convert Anthropic → Responses)
+
+	// 报文审计：获取配置
+	var captureMaxSize int64
+	if s.settingService != nil {
+		if payloadCfg, _ := s.settingService.GetPayloadLoggingSettings(ctx); payloadCfg != nil && payloadCfg.Enabled {
+			captureMaxSize = payloadCfg.MaxResponseSize
+		}
+	}
+
 	var result *ForwardResult
 	var handleErr error
 	if clientStream {
-		result, handleErr = s.handleResponsesStreamingResponse(resp, c, originalModel, mappedModel, reasoningEffort, startTime)
+		result, handleErr = s.handleResponsesStreamingResponse(resp, c, originalModel, mappedModel, reasoningEffort, startTime, captureMaxSize)
 	} else {
-		result, handleErr = s.handleResponsesBufferedStreamingResponse(resp, c, originalModel, mappedModel, reasoningEffort, startTime)
+		result, handleErr = s.handleResponsesBufferedStreamingResponse(resp, c, originalModel, mappedModel, reasoningEffort, startTime, captureMaxSize)
 	}
 
 	return result, handleErr
@@ -224,6 +233,7 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 	mappedModel string,
 	reasoningEffort *string,
 	startTime time.Time,
+	captureMaxSize int64,
 ) (*ForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
 
@@ -328,19 +338,36 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 	responsesResp := apicompat.AnthropicToResponsesResponse(finalResp)
 	responsesResp.Model = originalModel // Use original model name
 
+	// 报文审计：采集响应体（同时复用序列化结果避免二次 marshal）
+	var respBody []byte
+	var respTruncated bool
+	var jsonBytes []byte
+	if captureMaxSize > 0 {
+		if b, err := json.Marshal(responsesResp); err == nil {
+			jsonBytes = b
+			respBody, respTruncated = TruncateBytesWithFlag(jsonBytes, captureMaxSize)
+		}
+	}
+
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	}
-	c.JSON(http.StatusOK, responsesResp)
+	if jsonBytes != nil {
+		c.Data(http.StatusOK, "application/json; charset=utf-8", jsonBytes)
+	} else {
+		c.JSON(http.StatusOK, responsesResp)
+	}
 
 	return &ForwardResult{
-		RequestID:       requestID,
-		Usage:           usage,
-		Model:           originalModel,
-		UpstreamModel:   mappedModel,
-		ReasoningEffort: reasoningEffort,
-		Stream:          false,
-		Duration:        time.Since(startTime),
+		RequestID:         requestID,
+		Usage:             usage,
+		Model:             originalModel,
+		UpstreamModel:     mappedModel,
+		ReasoningEffort:   reasoningEffort,
+		Stream:            false,
+		Duration:          time.Since(startTime),
+		ResponseBody:      respBody,
+		ResponseTruncated: respTruncated,
 	}, nil
 }
 
@@ -353,6 +380,7 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 	mappedModel string,
 	reasoningEffort *string,
 	startTime time.Time,
+	captureMaxSize int64,
 ) (*ForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
 
@@ -371,6 +399,15 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 	var firstTokenMs *int
 	firstChunk := true
 
+	// 报文审计：初始化采样 buffer
+	var responseBuf *bytes.Buffer
+	var respTruncated bool
+	if captureMaxSize > 0 {
+		responseBuf = streamPayloadBufPool.Get().(*bytes.Buffer)
+		responseBuf.Reset()
+		defer streamPayloadBufPool.Put(responseBuf)
+	}
+
 	scanner := bufio.NewScanner(resp.Body)
 	maxLineSize := defaultMaxLineSize
 	if s.cfg != nil && s.cfg.Gateway.MaxLineSize > 0 {
@@ -379,7 +416,7 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 	scanner.Buffer(make([]byte, 0, 64*1024), maxLineSize)
 
 	resultWithUsage := func() *ForwardResult {
-		return &ForwardResult{
+		result := &ForwardResult{
 			RequestID:       requestID,
 			Usage:           usage,
 			Model:           originalModel,
@@ -389,6 +426,17 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 			Duration:        time.Since(startTime),
 			FirstTokenMs:    firstTokenMs,
 		}
+		// 报文审计：填充采样数据
+		if responseBuf != nil && responseBuf.Len() > 0 {
+			captured := responseBuf.Bytes()
+			if respTruncated {
+				captured = trimInvalidUTF8Tail(captured)
+			}
+			result.ResponseBody = make([]byte, len(captured))
+			copy(result.ResponseBody, captured)
+			result.ResponseTruncated = respTruncated
+		}
+		return result
 	}
 
 	// processEvent handles a single parsed Anthropic SSE event.
@@ -425,6 +473,19 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 				)
 				return true // client disconnected
 			}
+			// 报文审计：采样流式响应
+			if responseBuf != nil && !respTruncated {
+				sseBytes := []byte(sse)
+				remaining := captureMaxSize - int64(responseBuf.Len())
+				if remaining <= 0 {
+					respTruncated = true
+				} else if int64(len(sseBytes)) <= remaining {
+					responseBuf.Write(sseBytes)
+				} else {
+					responseBuf.Write(sseBytes[:remaining])
+					respTruncated = true
+				}
+			}
 		}
 		if len(events) > 0 {
 			c.Writer.Flush()
@@ -440,6 +501,19 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 					continue
 				}
 				fmt.Fprint(c.Writer, sse) //nolint:errcheck
+				// 报文审计：采样 final events
+				if responseBuf != nil && !respTruncated {
+					sseBytes := []byte(sse)
+					remaining := captureMaxSize - int64(responseBuf.Len())
+					if remaining <= 0 {
+						respTruncated = true
+					} else if int64(len(sseBytes)) <= remaining {
+						responseBuf.Write(sseBytes)
+					} else {
+						responseBuf.Write(sseBytes[:remaining])
+						respTruncated = true
+					}
+				}
 			}
 			c.Writer.Flush()
 		}
