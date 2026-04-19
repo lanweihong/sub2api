@@ -1439,6 +1439,40 @@ export interface UpdateUserRequest {
   group_rates?: Record<number, number | null>
 }
 
+export interface BatchUserFieldError {
+  field: string
+  code: string
+  message: string
+}
+
+export interface BatchUserRowError extends BatchUserFieldError {
+  row_no: number
+}
+
+export interface BatchUserPreviewItem {
+  row_no: number
+  source_name: string
+  email: string
+  password: string
+  username: string
+  notes: string
+  balance: number
+  concurrency: number
+  errors?: BatchUserFieldError[]
+}
+
+export interface BatchCreateUsersResponse {
+  created_count: number
+  failed_count: number
+  users?: Array<{
+    row_no: number
+    id: number
+    email: string
+    username: string
+  }>
+  errors?: BatchUserRowError[]
+}
+
 export interface ChangePasswordRequest {
   old_password: string
   new_password: string

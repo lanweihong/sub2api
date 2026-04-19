@@ -4,7 +4,15 @@
  */
 
 import { apiClient } from '../client'
-import type { AdminUser, UpdateUserRequest, PaginatedResponse, ApiKey, Group } from '@/types'
+import type {
+  AdminUser,
+  UpdateUserRequest,
+  PaginatedResponse,
+  ApiKey,
+  Group,
+  BatchUserPreviewItem,
+  BatchCreateUsersResponse
+} from '@/types'
 
 /**
  * List all users with pagination
@@ -82,6 +90,44 @@ export async function create(userData: {
   allowed_groups?: number[] | null
 }): Promise<AdminUser> {
   const { data } = await apiClient.post<AdminUser>('/admin/users', userData)
+  return data
+}
+
+/**
+ * Preview batch-created users from a plain-text name list.
+ * @param names - Source names, one line per user
+ * @returns Generated editable preview rows
+ */
+export async function previewBatch(
+  names: string[]
+): Promise<{ items: BatchUserPreviewItem[] }> {
+  const { data } = await apiClient.post<{ items: BatchUserPreviewItem[] }>(
+    '/admin/users/batch/preview',
+    { names }
+  )
+  return data
+}
+
+/**
+ * Create users in a single batch request.
+ * Validation failures are returned inside the success payload as row errors.
+ * @param users - Final editable rows to create
+ * @returns Batch create result
+ */
+export async function createBatch(users: Array<{
+  row_no: number
+  source_name: string
+  email: string
+  password: string
+  username: string
+  notes: string
+  balance: number
+  concurrency: number
+}>): Promise<BatchCreateUsersResponse> {
+  const { data } = await apiClient.post<BatchCreateUsersResponse>(
+    '/admin/users/batch',
+    { users }
+  )
   return data
 }
 
@@ -262,6 +308,8 @@ export const usersAPI = {
   list,
   getById,
   create,
+  previewBatch,
+  createBatch,
   update,
   delete: deleteUser,
   updateBalance,
