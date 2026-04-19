@@ -4762,18 +4762,32 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 	var usage *ClaudeUsage
 	var firstTokenMs *int
 	var clientDisconnect bool
+	var respBody []byte
+	var respTruncated bool
+	var captureMaxSize int64
+	if s.settingService != nil {
+		if payloadCfg, _ := s.settingService.GetPayloadLoggingSettings(ctx); payloadCfg != nil && payloadCfg.Enabled {
+			captureMaxSize = payloadCfg.MaxResponseSize
+		}
+	}
 	if input.RequestStream {
-		streamResult, err := s.handleStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account, input.StartTime, input.RequestModel)
+		streamResult, err := s.handleStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account, input.StartTime, input.RequestModel, captureMaxSize)
 		if err != nil {
 			return nil, err
 		}
 		usage = streamResult.usage
 		firstTokenMs = streamResult.firstTokenMs
 		clientDisconnect = streamResult.clientDisconnect
+		respBody = streamResult.responseBody
+		respTruncated = streamResult.responseTruncated
 	} else {
-		usage, err = s.handleNonStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account)
+		var nonStreamBody []byte
+		usage, nonStreamBody, err = s.handleNonStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account)
 		if err != nil {
 			return nil, err
+		}
+		if captureMaxSize > 0 {
+			respBody, respTruncated = TruncateBytesWithFlag(nonStreamBody, captureMaxSize)
 		}
 	}
 	if usage == nil {
@@ -4781,14 +4795,16 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 	}
 
 	return &ForwardResult{
-		RequestID:        resp.Header.Get("x-request-id"),
-		Usage:            *usage,
-		Model:            input.OriginalModel,
-		UpstreamModel:    input.RequestModel,
-		Stream:           input.RequestStream,
-		Duration:         time.Since(input.StartTime),
-		FirstTokenMs:     firstTokenMs,
-		ClientDisconnect: clientDisconnect,
+		RequestID:         resp.Header.Get("x-request-id"),
+		Usage:             *usage,
+		Model:             input.OriginalModel,
+		UpstreamModel:     input.RequestModel,
+		Stream:            input.RequestStream,
+		Duration:          time.Since(input.StartTime),
+		FirstTokenMs:      firstTokenMs,
+		ClientDisconnect:  clientDisconnect,
+		ResponseBody:      respBody,
+		ResponseTruncated: respTruncated,
 	}, nil
 }
 
@@ -4851,9 +4867,53 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 	account *Account,
 	startTime time.Time,
 	model string,
+	captureMaxSize int64,
 ) (*streamingResult, error) {
 	if s.rateLimitService != nil {
 		s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
+	}
+
+	var responseBuf *bytes.Buffer
+	var respTruncated bool
+	if captureMaxSize > 0 {
+		responseBuf = streamPayloadBufPool.Get().(*bytes.Buffer)
+		responseBuf.Reset()
+		defer streamPayloadBufPool.Put(responseBuf)
+	}
+
+	makeStreamResult := func(usage *ClaudeUsage, firstTokenMs *int, clientDisconnect bool) *streamingResult {
+		sr := &streamingResult{
+			usage:            usage,
+			firstTokenMs:     firstTokenMs,
+			clientDisconnect: clientDisconnect,
+		}
+		if responseBuf != nil && responseBuf.Len() > 0 {
+			captured := responseBuf.Bytes()
+			if respTruncated {
+				captured = trimInvalidUTF8Tail(captured)
+			}
+			sr.responseBody = make([]byte, len(captured))
+			copy(sr.responseBody, captured)
+			sr.responseTruncated = respTruncated
+		}
+		return sr
+	}
+
+	appendResponseSample := func(chunk []byte) {
+		if responseBuf == nil || respTruncated || len(chunk) == 0 {
+			return
+		}
+		remaining := captureMaxSize - int64(responseBuf.Len())
+		if remaining <= 0 {
+			respTruncated = true
+			return
+		}
+		if int64(len(chunk)) <= remaining {
+			responseBuf.Write(chunk)
+			return
+		}
+		responseBuf.Write(chunk[:remaining])
+		respTruncated = true
 	}
 
 	writeAnthropicPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -4947,25 +5007,25 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 					flusher.Flush()
 				}
 				if !sawTerminalEvent {
-					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, fmt.Errorf("stream usage incomplete: missing terminal event")
+					return makeStreamResult(usage, firstTokenMs, clientDisconnected), fmt.Errorf("stream usage incomplete: missing terminal event")
 				}
-				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, nil
+				return makeStreamResult(usage, firstTokenMs, clientDisconnected), nil
 			}
 			if ev.err != nil {
 				if sawTerminalEvent {
-					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, nil
+					return makeStreamResult(usage, firstTokenMs, clientDisconnected), nil
 				}
 				if clientDisconnected {
-					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, fmt.Errorf("stream usage incomplete after disconnect: %w", ev.err)
+					return makeStreamResult(usage, firstTokenMs, true), fmt.Errorf("stream usage incomplete after disconnect: %w", ev.err)
 				}
 				if errors.Is(ev.err, context.Canceled) || errors.Is(ev.err, context.DeadlineExceeded) {
-					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, fmt.Errorf("stream usage incomplete: %w", ev.err)
+					return makeStreamResult(usage, firstTokenMs, true), fmt.Errorf("stream usage incomplete: %w", ev.err)
 				}
 				if errors.Is(ev.err, bufio.ErrTooLong) {
 					logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] SSE line too long: account=%d max_size=%d error=%v", account.ID, maxLineSize, ev.err)
-					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, ev.err
+					return makeStreamResult(usage, firstTokenMs, false), ev.err
 				}
-				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream read error: %w", ev.err)
+				return makeStreamResult(usage, firstTokenMs, false), fmt.Errorf("stream read error: %w", ev.err)
 			}
 
 			line := ev.line
@@ -4986,6 +5046,9 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 				}
 			}
 
+			appendResponseSample([]byte(line))
+			appendResponseSample([]byte("\n"))
+
 			if !clientDisconnected {
 				if _, err := io.WriteString(w, line); err != nil {
 					clientDisconnected = true
@@ -5005,13 +5068,13 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 				continue
 			}
 			if clientDisconnected {
-				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, fmt.Errorf("stream usage incomplete after timeout")
+				return makeStreamResult(usage, firstTokenMs, true), fmt.Errorf("stream usage incomplete after timeout")
 			}
 			logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Stream data interval timeout: account=%d model=%s interval=%s", account.ID, model, streamInterval)
 			if s.rateLimitService != nil {
 				s.rateLimitService.HandleStreamTimeout(ctx, account, model)
 			}
-			return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream data interval timeout")
+			return makeStreamResult(usage, firstTokenMs, false), fmt.Errorf("stream data interval timeout")
 		}
 	}
 }
@@ -5140,14 +5203,14 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 	resp *http.Response,
 	c *gin.Context,
 	account *Account,
-) (*ClaudeUsage, error) {
+) (*ClaudeUsage, []byte, error) {
 	if s.rateLimitService != nil {
 		s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
 	}
 
 	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, anthropicTooLargeError)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	usage := parseClaudeUsageFromResponseBody(body)
@@ -5158,7 +5221,7 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 		contentType = "application/json"
 	}
 	c.Data(resp.StatusCode, contentType, body)
-	return usage, nil
+	return usage, body, nil
 }
 
 func writeAnthropicPassthroughResponseHeaders(dst http.Header, src http.Header, filter *responseheaders.CompiledHeaderFilter) {

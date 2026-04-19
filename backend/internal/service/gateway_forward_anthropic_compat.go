@@ -123,8 +123,14 @@ func (s *GatewayService) ForwardAnthropicCompat(
 
 	// 11. 分发流式或非流式响应处理
 	reqStream := parsed.Stream
+	var captureMaxSize int64
+	if s.settingService != nil {
+		if payloadCfg, _ := s.settingService.GetPayloadLoggingSettings(ctx); payloadCfg != nil && payloadCfg.Enabled {
+			captureMaxSize = payloadCfg.MaxResponseSize
+		}
+	}
 	if reqStream {
-		sr, streamErr := s.handleStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account, startTime, mappedModel)
+		sr, streamErr := s.handleStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account, startTime, mappedModel, captureMaxSize)
 		if streamErr != nil && (sr == nil || (sr.usage == nil && !sr.clientDisconnect)) {
 			logger.LegacyPrintf("service.anthropic_compat",
 				"[AnthropicCompat] 流式响应处理错误: %v (账号: %d)", streamErr, account.ID)
@@ -141,6 +147,8 @@ func (s *GatewayService) ForwardAnthropicCompat(
 			}
 			result.FirstTokenMs = sr.firstTokenMs
 			result.ClientDisconnect = sr.clientDisconnect
+			result.ResponseBody = sr.responseBody
+			result.ResponseTruncated = sr.responseTruncated
 		}
 		if mappedModel != originalModel {
 			result.UpstreamModel = mappedModel
@@ -149,7 +157,7 @@ func (s *GatewayService) ForwardAnthropicCompat(
 	}
 
 	// 非流式响应
-	usage, handleErr := s.handleNonStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account)
+	usage, nonStreamBody, handleErr := s.handleNonStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account)
 	if handleErr != nil {
 		return nil, handleErr
 	}
@@ -161,6 +169,9 @@ func (s *GatewayService) ForwardAnthropicCompat(
 	}
 	if usage != nil {
 		result.Usage = *usage
+	}
+	if captureMaxSize > 0 {
+		result.ResponseBody, result.ResponseTruncated = TruncateBytesWithFlag(nonStreamBody, captureMaxSize)
 	}
 	if mappedModel != originalModel {
 		result.UpstreamModel = mappedModel
