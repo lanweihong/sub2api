@@ -5,6 +5,8 @@
  * instead of defining their own color mappings.
  */
 
+import { isAnthropicCompatPlatform } from '@/utils/accountBaseUrl'
+
 export type Platform = 'anthropic' | 'openai' | 'antigravity' | 'gemini'
 
 // ── Badge (bg + text + border, for inline badges with border) ───────
@@ -110,48 +112,66 @@ function isPlatform(p: string): p is Platform {
   return p === 'anthropic' || p === 'openai' || p === 'antigravity' || p === 'gemini'
 }
 
+function resolvePalettePlatform(p: string): Platform | null {
+  if (p === 'anthropic' || isAnthropicCompatPlatform(p)) {
+    return 'anthropic'
+  }
+  return isPlatform(p) ? p : null
+}
+
 export function platformBadgeClass(p: string): string {
-  return isPlatform(p) ? BADGE[p] : BADGE_DEFAULT
+  const palette = resolvePalettePlatform(p)
+  return palette ? BADGE[palette] : BADGE_DEFAULT
 }
 
 export function platformBadgeLightClass(p: string): string {
-  return isPlatform(p) ? BADGE_LIGHT[p] : BADGE_DEFAULT
+  const palette = resolvePalettePlatform(p)
+  return palette ? BADGE_LIGHT[palette] : BADGE_DEFAULT
 }
 
 export function platformBorderClass(p: string): string {
-  return isPlatform(p) ? BORDER[p] : BORDER_DEFAULT
+  const palette = resolvePalettePlatform(p)
+  return palette ? BORDER[palette] : BORDER_DEFAULT
 }
 
 export function platformAccentBarClass(p: string): string {
-  return isPlatform(p) ? ACCENT_BAR[p] : ACCENT_BAR_DEFAULT
+  const palette = resolvePalettePlatform(p)
+  return palette ? ACCENT_BAR[palette] : ACCENT_BAR_DEFAULT
 }
 
 export function platformTextClass(p: string): string {
-  return isPlatform(p) ? TEXT[p] : TEXT_DEFAULT
+  const palette = resolvePalettePlatform(p)
+  return palette ? TEXT[palette] : TEXT_DEFAULT
 }
 
 export function platformIconClass(p: string): string {
-  return isPlatform(p) ? ICON[p] : ICON_DEFAULT
+  const palette = resolvePalettePlatform(p)
+  return palette ? ICON[palette] : ICON_DEFAULT
 }
 
 export function platformButtonClass(p: string): string {
-  return isPlatform(p) ? BUTTON[p] : BUTTON_DEFAULT
+  const palette = resolvePalettePlatform(p)
+  return palette ? BUTTON[palette] : BUTTON_DEFAULT
 }
 
 export function platformDiscountClass(p: string): string {
-  return isPlatform(p) ? DISCOUNT[p] : DISCOUNT_DEFAULT
+  const palette = resolvePalettePlatform(p)
+  return palette ? DISCOUNT[palette] : DISCOUNT_DEFAULT
 }
 
 export function platformGradientClass(p: string): string {
-  return isPlatform(p) ? GRADIENT[p] : GRADIENT_DEFAULT
+  const palette = resolvePalettePlatform(p)
+  return palette ? GRADIENT[palette] : GRADIENT_DEFAULT
 }
 
 export function platformGradientTextClass(p: string): string {
-  return isPlatform(p) ? GRADIENT_TEXT[p] : GRADIENT_TEXT_DEFAULT
+  const palette = resolvePalettePlatform(p)
+  return palette ? GRADIENT_TEXT[palette] : GRADIENT_TEXT_DEFAULT
 }
 
 export function platformGradientSubtextClass(p: string): string {
-  return isPlatform(p) ? GRADIENT_SUBTEXT[p] : GRADIENT_SUBTEXT_DEFAULT
+  const palette = resolvePalettePlatform(p)
+  return palette ? GRADIENT_SUBTEXT[palette] : GRADIENT_SUBTEXT_DEFAULT
 }
 
 export function platformLabel(p: string): string {

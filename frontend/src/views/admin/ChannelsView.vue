@@ -718,7 +718,22 @@ const form = reactive({
 let abortController: AbortController | null = null
 
 // ── Platform config ──
-const platformOrder: GroupPlatform[] = ['anthropic', 'openai', 'gemini', 'antigravity']
+const anthropicCompatPlatforms: GroupPlatform[] = [
+  'anthropic-compatible',
+  'anthropic-zhipu',
+  'anthropic-kimi',
+  'anthropic-minimax',
+  'anthropic-qwen',
+  'anthropic-mimo',
+]
+
+const platformOrder: GroupPlatform[] = [
+  'anthropic',
+  ...anthropicCompatPlatforms,
+  'openai',
+  'gemini',
+  'antigravity',
+]
 
 // ── Helpers ──
 function formatDate(value: string): string {
@@ -1071,10 +1086,12 @@ function apiToForm(channel: Channel): PlatformSection[] {
   }
 
   // Build sections in platform order
+  const orderedPlatforms = [
+    ...platformOrder.filter(platform => activePlatforms.has(platform)),
+    ...[...activePlatforms].filter(platform => !platformOrder.includes(platform)),
+  ]
   const sections: PlatformSection[] = []
-  for (const platform of platformOrder) {
-    if (!activePlatforms.has(platform)) continue
-
+  for (const platform of orderedPlatforms) {
     const groupIds = (channel.group_ids || []).filter(gid => groupPlatformMap.get(gid) === platform)
     const mapping = (channel.model_mapping || {})[platform] || {}
     const pricing = (channel.model_pricing || [])
