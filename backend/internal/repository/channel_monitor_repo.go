@@ -36,7 +36,7 @@ func (r *channelMonitorRepository) Create(ctx context.Context, m *service.Channe
 	client := clientFromContext(ctx, r.client)
 	builder := client.ChannelMonitor.Create().
 		SetName(m.Name).
-		SetProvider(channelmonitor.Provider(m.Provider)).
+		SetProvider(m.Provider).
 		SetEndpoint(m.Endpoint).
 		SetAPIKeyEncrypted(m.APIKey). // 调用方传入的已是密文
 		SetPrimaryModel(m.PrimaryModel).
@@ -78,7 +78,7 @@ func (r *channelMonitorRepository) Update(ctx context.Context, m *service.Channe
 	client := clientFromContext(ctx, r.client)
 	updater := client.ChannelMonitor.UpdateOneID(m.ID).
 		SetName(m.Name).
-		SetProvider(channelmonitor.Provider(m.Provider)).
+		SetProvider(m.Provider).
 		SetEndpoint(m.Endpoint).
 		SetAPIKeyEncrypted(m.APIKey).
 		SetPrimaryModel(m.PrimaryModel).
@@ -118,7 +118,7 @@ func (r *channelMonitorRepository) Delete(ctx context.Context, id int64) error {
 func (r *channelMonitorRepository) List(ctx context.Context, params service.ChannelMonitorListParams) ([]*service.ChannelMonitor, int64, error) {
 	q := r.client.ChannelMonitor.Query()
 	if params.Provider != "" {
-		q = q.Where(channelmonitor.ProviderEQ(channelmonitor.Provider(params.Provider)))
+		q = q.Where(channelmonitor.ProviderEQ(params.Provider))
 	}
 	if params.Enabled != nil {
 		q = q.Where(channelmonitor.EnabledEQ(*params.Enabled))

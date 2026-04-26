@@ -25,12 +25,14 @@ func swapMonitorHTTPClient(t *testing.T) {
 type captureHandler struct {
 	lastBody    map[string]any
 	lastHeaders http.Header
+	lastPath    string
 	respondText string // 写到 Anthropic content[0].text 里（校验用）
 	status      int
 }
 
 func (h *captureHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.lastHeaders = r.Header.Clone()
+	h.lastPath = r.URL.Path
 	defer func() { _ = r.Body.Close() }()
 	var parsed map[string]any
 	_ = json.NewDecoder(r.Body).Decode(&parsed)

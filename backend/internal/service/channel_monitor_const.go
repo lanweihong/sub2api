@@ -110,7 +110,7 @@ var (
 		"CHANNEL_MONITOR_NOT_FOUND", "channel monitor not found",
 	)
 	ErrChannelMonitorInvalidProvider = infraerrors.BadRequest(
-		"CHANNEL_MONITOR_INVALID_PROVIDER", "provider must be one of openai/anthropic/gemini",
+		"CHANNEL_MONITOR_INVALID_PROVIDER", "provider is not supported by channel monitor",
 	)
 	ErrChannelMonitorInvalidInterval = infraerrors.BadRequest(
 		"CHANNEL_MONITOR_INVALID_INTERVAL", "interval_seconds must be in [15, 3600]",

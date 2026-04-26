@@ -26,7 +26,7 @@ func validateInterval(sec int) error {
 	return nil
 }
 
-// validateEndpoint 校验 endpoint：
+// validateEndpoint 校验官方 provider endpoint：
 //   - scheme 强制 https（拒绝 http，避免明文凭证 + 部分 SSRF 利用面）
 //   - 必须为 origin（无 path/query/fragment），防止用户填 https://api.openai.com/v1
 //     导致 joinURL 拼出 /v1/v1/chat/completions
@@ -35,6 +35,17 @@ func validateInterval(sec int) error {
 //
 // 错误信息不暴露具体 IP / hostname，避免泄露内网拓扑。
 func validateEndpoint(ep string) error {
+	return validateEndpointWithPathPolicy(ep, false)
+}
+
+// validateEndpointForProvider 按 provider 校验 endpoint。
+// Anthropic-compatible 平台的默认 Base URL 可能带 path 前缀（如 /api/anthropic），
+// 因此允许 path，但仍拒绝 query/fragment/http/私网地址。
+func validateEndpointForProvider(provider, ep string) error {
+	return validateEndpointWithPathPolicy(ep, IsAnthropicCompatPlatform(provider))
+}
+
+func validateEndpointWithPathPolicy(ep string, allowPath bool) error {
 	ep = strings.TrimSpace(ep)
 	if ep == "" {
 		return ErrChannelMonitorInvalidEndpoint
@@ -49,7 +60,7 @@ func validateEndpoint(ep string) error {
 	if u.Host == "" {
 		return ErrChannelMonitorInvalidEndpoint
 	}
-	if u.Path != "" && u.Path != "/" {
+	if !allowPath && u.Path != "" && u.Path != "/" {
 		return ErrChannelMonitorEndpointPath
 	}
 	if u.RawQuery != "" || u.Fragment != "" {
@@ -69,8 +80,8 @@ func validateEndpoint(ep string) error {
 	return nil
 }
 
-// normalizeEndpoint 去除前后空白与末尾 `/`，保证存储统一为 origin。
-// validateEndpoint 已确保格式合法（仅 origin），这里只做最终归一化。
+// normalizeEndpoint 去除前后空白与末尾 `/`。
+// 官方 provider 存储为 origin；Anthropic-compatible provider 允许保留 base path 前缀。
 func normalizeEndpoint(ep string) string {
 	ep = strings.TrimSpace(ep)
 	ep = strings.TrimRight(ep, "/")

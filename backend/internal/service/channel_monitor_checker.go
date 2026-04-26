@@ -13,6 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/service/anthropiccompat"
+	// Register built-in Anthropic-compatible monitor providers.
+	_ "github.com/Wei-Shaw/sub2api/internal/service/anthropiccompat/providers"
 	"github.com/tidwall/gjson"
 )
 
@@ -160,7 +163,8 @@ type providerAdapter struct {
 	textPath     string // gjson 提取响应文本的 path
 }
 
-// providerAdapters 全部已支持的 provider。键值即 MonitorProvider* 字符串。
+// providerAdapters 官方 provider 的静态 adapter。Anthropic-compatible 平台通过
+// anthropiccompat.ProviderSpec 动态生成 adapter，避免每新增国产兼容平台都改这里。
 //
 //nolint:gochecknoglobals // 适配器表是只读静态数据，初始化后不变更。
 var providerAdapters = map[string]providerAdapter{
@@ -218,8 +222,47 @@ var providerAdapters = map[string]providerAdapter{
 // isSupportedProvider 校验 provider 字符串是否在 adapter 表中。
 // 供 validate.go 的 validateProvider 复用，避免两份 switch 漂移。
 func isSupportedProvider(p string) bool {
-	_, ok := providerAdapters[p]
+	_, ok := resolveProviderAdapter(p)
 	return ok
+}
+
+func resolveProviderAdapter(provider string) (providerAdapter, bool) {
+	if adapter, ok := providerAdapters[provider]; ok {
+		return adapter, true
+	}
+	if !IsAnthropicCompatPlatform(provider) {
+		return providerAdapter{}, false
+	}
+	spec, ok := anthropiccompat.Resolve(provider)
+	if !ok {
+		return providerAdapter{}, false
+	}
+	return anthropicCompatMonitorAdapter(spec), true
+}
+
+func anthropicCompatMonitorAdapter(spec *anthropiccompat.ProviderSpec) providerAdapter {
+	return providerAdapter{
+		buildPath: func(string) string { return spec.MessagesEndpointPath() },
+		buildBody: func(model, prompt string) ([]byte, error) {
+			return json.Marshal(map[string]any{
+				"model":      model,
+				"messages":   []map[string]string{{"role": "user", "content": prompt}},
+				"max_tokens": monitorChallengeMaxTokens,
+			})
+		},
+		buildHeaders: func(apiKey string) map[string]string {
+			headers := map[string]string{
+				"anthropic-version": spec.AnthropicVersionHeader(),
+			}
+			authHeaderName, authHeaderValue := spec.ResolveAuthHeader(apiKey)
+			headers[authHeaderName] = authHeaderValue
+			for k, v := range spec.DefaultHeaders {
+				headers[k] = v
+			}
+			return headers
+		},
+		textPath: "content.0.text",
+	}
 }
 
 // callProvider 通过 providerAdapters 分发到具体实现。
@@ -231,7 +274,7 @@ func isSupportedProvider(p string) bool {
 //   - status: HTTP 状态码
 //   - err: 网络 / 序列化错误
 func callProvider(ctx context.Context, provider, endpoint, apiKey, model, prompt string, opts *CheckOptions) (extractedText, rawBody string, status int, err error) {
-	adapter, ok := providerAdapters[provider]
+	adapter, ok := resolveProviderAdapter(provider)
 	if !ok {
 		return "", "", 0, fmt.Errorf("unsupported provider %q", provider)
 	}
@@ -301,7 +344,7 @@ func buildRequestBody(adapter providerAdapter, provider, model, prompt string, o
 	if err := json.Unmarshal(defaultBody, &defaultMap); err != nil {
 		return nil, fmt.Errorf("unmarshal default body for merge: %w", err)
 	}
-	deny := bodyMergeKeyDenyList[provider]
+	deny := bodyMergeDenyList(provider)
 	for k, v := range opts.BodyOverride {
 		if deny[k] {
 			continue
@@ -324,6 +367,13 @@ var bodyMergeKeyDenyList = map[string]map[string]bool{
 	MonitorProviderOpenAI:    {"model": true, "messages": true, "stream": true},
 	MonitorProviderAnthropic: {"model": true, "messages": true},
 	MonitorProviderGemini:    {"contents": true},
+}
+
+func bodyMergeDenyList(provider string) map[string]bool {
+	if IsAnthropicCompatPlatform(provider) {
+		return bodyMergeKeyDenyList[MonitorProviderAnthropic]
+	}
+	return bodyMergeKeyDenyList[provider]
 }
 
 // postRawJSON 发送 POST + 已序列化好的 JSON 字节，限制响应体大小，返回响应字节、HTTP status、错误。

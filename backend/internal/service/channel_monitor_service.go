@@ -153,7 +153,7 @@ func validateCreateParams(p ChannelMonitorCreateParams) error {
 	if err := validateInterval(p.IntervalSeconds); err != nil {
 		return err
 	}
-	if err := validateEndpoint(p.Endpoint); err != nil {
+	if err := validateEndpointForProvider(p.Provider, p.Endpoint); err != nil {
 		return err
 	}
 	if strings.TrimSpace(p.APIKey) == "" {
@@ -472,17 +472,23 @@ func applyMonitorUpdate(existing *ChannelMonitor, p ChannelMonitorUpdateParams) 
 	if p.Name != nil {
 		existing.Name = strings.TrimSpace(*p.Name)
 	}
+	provider := existing.Provider
 	if p.Provider != nil {
 		if err := validateProvider(*p.Provider); err != nil {
 			return err
 		}
-		existing.Provider = *p.Provider
+		provider = *p.Provider
 	}
+	endpoint := existing.Endpoint
 	if p.Endpoint != nil {
-		if err := validateEndpoint(*p.Endpoint); err != nil {
+		endpoint = *p.Endpoint
+	}
+	if p.Provider != nil || p.Endpoint != nil {
+		if err := validateEndpointForProvider(provider, endpoint); err != nil {
 			return err
 		}
-		existing.Endpoint = normalizeEndpoint(*p.Endpoint)
+		existing.Provider = provider
+		existing.Endpoint = normalizeEndpoint(endpoint)
 	}
 	if p.PrimaryModel != nil {
 		existing.PrimaryModel = strings.TrimSpace(*p.PrimaryModel)

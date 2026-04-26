@@ -29,7 +29,7 @@ func (r *channelMonitorRequestTemplateRepository) Create(ctx context.Context, t 
 	client := clientFromContext(ctx, r.client)
 	builder := client.ChannelMonitorRequestTemplate.Create().
 		SetName(t.Name).
-		SetProvider(channelmonitorrequesttemplate.Provider(t.Provider)).
+		SetProvider(t.Provider).
 		SetDescription(t.Description).
 		SetExtraHeaders(emptyHeadersIfNilRepo(t.ExtraHeaders)).
 		SetBodyOverrideMode(defaultBodyModeRepo(t.BodyOverrideMode))
@@ -88,7 +88,7 @@ func (r *channelMonitorRequestTemplateRepository) Delete(ctx context.Context, id
 func (r *channelMonitorRequestTemplateRepository) List(ctx context.Context, params service.ChannelMonitorRequestTemplateListParams) ([]*service.ChannelMonitorRequestTemplate, error) {
 	q := r.client.ChannelMonitorRequestTemplate.Query()
 	if params.Provider != "" {
-		q = q.Where(channelmonitorrequesttemplate.ProviderEQ(channelmonitorrequesttemplate.Provider(params.Provider)))
+		q = q.Where(channelmonitorrequesttemplate.ProviderEQ(params.Provider))
 	}
 	rows, err := q.
 		Order(dbent.Asc(channelmonitorrequesttemplate.FieldProvider), dbent.Asc(channelmonitorrequesttemplate.FieldName)).
