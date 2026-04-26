@@ -13,7 +13,7 @@
 
       <div>
         <label class="input-label">{{ t('admin.channelMonitor.form.provider') }} <span class="text-red-500">*</span></label>
-        <div class="grid grid-cols-3 gap-3">
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           <button
             v-for="opt in providerOptions"
             :key="opt.value"
@@ -182,10 +182,10 @@ import MonitorKeyPickerDialog from '@/components/admin/monitor/MonitorKeyPickerD
 import MonitorAdvancedRequestConfig from '@/components/admin/monitor/MonitorAdvancedRequestConfig.vue'
 import ProviderIcon from '@/components/user/monitor/ProviderIcon.vue'
 import { useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
+import { getDefaultApiKeyBaseUrl } from '@/utils/accountBaseUrl'
 import {
-  PROVIDER_OPENAI,
   PROVIDER_ANTHROPIC,
-  PROVIDER_GEMINI,
+  PROVIDERS,
   DEFAULT_INTERVAL_SECONDS,
 } from '@/constants/channelMonitor'
 
@@ -307,25 +307,33 @@ interface ProviderOption {
 }
 
 const providerOptions = computed<ProviderOption[]>(() => [
-  { value: PROVIDER_ANTHROPIC, label: t('monitorCommon.providers.anthropic') },
-  { value: PROVIDER_OPENAI, label: t('monitorCommon.providers.openai') },
-  { value: PROVIDER_GEMINI, label: t('monitorCommon.providers.gemini') },
+  ...PROVIDERS.map((p) => ({ value: p, label: t(`monitorCommon.providers.${p}`) })),
 ])
+
+function defaultEndpointForProvider(provider: Provider): string {
+  return getDefaultApiKeyBaseUrl(provider)
+}
 
 // Clear api_key whenever provider changes to avoid cross-provider key mismatch.
 // Editing mode loads api_key='' via loadFromMonitor and only sets it on user
 // typing, so clearing on provider change is always a safe no-op until the user
 // picks a new key.
 // 同时清空 template_id（模板有 provider 归属，跨平台不通用）。
-watch(() => form.provider, () => {
+watch(() => form.provider, (provider, previousProvider) => {
+  const endpoint = form.endpoint.trim()
+  const previousDefault = previousProvider ? defaultEndpointForProvider(previousProvider) : ''
+  const nextDefault = defaultEndpointForProvider(provider)
   form.api_key = ''
   form.template_id = null
-})
+  if (endpoint === '' || endpoint === previousDefault) {
+    form.endpoint = nextDefault
+  }
+}, { flush: 'sync' })
 
 function resetForm() {
   form.name = ''
   form.provider = PROVIDER_ANTHROPIC
-  form.endpoint = ''
+  form.endpoint = defaultEndpointForProvider(PROVIDER_ANTHROPIC)
   form.api_key = ''
   form.primary_model = ''
   form.extra_models = []

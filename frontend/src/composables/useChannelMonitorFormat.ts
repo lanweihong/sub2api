@@ -12,10 +12,12 @@
 
 import { useI18n } from 'vue-i18n'
 import type { MonitorStatus, Provider } from '@/api/admin/channelMonitor'
+import { isAnthropicCompatPlatform } from '@/utils/accountBaseUrl'
 import {
   PROVIDER_OPENAI,
   PROVIDER_ANTHROPIC,
   PROVIDER_GEMINI,
+  PROVIDERS,
   STATUS_OPERATIONAL,
   STATUS_DEGRADED,
   STATUS_FAILED,
@@ -57,13 +59,16 @@ export function useChannelMonitorFormat() {
   }
 
   function providerLabel(p: Provider | string): string {
-    if (p === PROVIDER_OPENAI || p === PROVIDER_ANTHROPIC || p === PROVIDER_GEMINI) {
+    if ((PROVIDERS as readonly string[]).includes(p)) {
       return t(`monitorCommon.providers.${p}`)
     }
     return p || '-'
   }
 
   function providerBadgeClass(p: Provider | string): string {
+    if (isAnthropicCompatPlatform(p)) {
+      return 'bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300'
+    }
     switch (p) {
       case PROVIDER_OPENAI:
         return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
@@ -82,6 +87,11 @@ export function useChannelMonitorFormat() {
    * visual semantics consistent across badges and pickers.
    */
   function providerPickerClass(p: Provider | string, active: boolean): string {
+    if (isAnthropicCompatPlatform(p)) {
+      return active
+        ? 'border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300 dark:border-orange-400'
+        : 'border-gray-200 bg-white text-gray-600 hover:border-orange-300 hover:text-orange-700 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-400 dark:hover:border-orange-500/50'
+    }
     switch (p) {
       case PROVIDER_OPENAI:
         return active
@@ -159,6 +169,9 @@ export function hslForPct(pct: number | null | undefined): string | undefined {
  * Tailwind gradient class for the provider icon tile background.
  */
 export function providerGradient(provider: string): string {
+  if (isAnthropicCompatPlatform(provider)) {
+    return 'bg-gradient-to-br from-orange-50 to-amber-100 dark:from-orange-500/10 dark:to-amber-500/20'
+  }
   switch (provider) {
     case PROVIDER_OPENAI:
       return 'bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-500/10 dark:to-emerald-500/20'

@@ -892,7 +892,13 @@ export default {
     providers: {
       openai: 'OpenAI',
       anthropic: 'Anthropic',
-      gemini: 'Gemini'
+      gemini: 'Gemini',
+      'anthropic-compatible': '其他 (Anthropic-compatible)',
+      'anthropic-zhipu': '智谱 GLM',
+      'anthropic-kimi': 'Kimi / 月之暗面',
+      'anthropic-minimax': 'MiniMax',
+      'anthropic-qwen': '通义千问',
+      'anthropic-mimo': '小米 MiMo'
     },
     extraModelsHeader: '附加模型',
     extraModelsEmpty: '无附加模型',

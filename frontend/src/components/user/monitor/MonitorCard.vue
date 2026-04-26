@@ -80,6 +80,7 @@ import {
   useChannelMonitorFormat,
   providerGradient,
 } from '@/composables/useChannelMonitorFormat'
+import { isAnthropicCompatPlatform } from '@/utils/accountBaseUrl'
 import ProviderIcon from './ProviderIcon.vue'
 import MonitorMetricPair from './MonitorMetricPair.vue'
 import MonitorAvailabilityRow from './MonitorAvailabilityRow.vue'
@@ -111,9 +112,10 @@ const {
   formatLatency,
 } = useChannelMonitorFormat()
 
-const providerTintClass = computed(() =>
-  PROVIDER_TINT[props.item.provider] ?? 'text-gray-500 dark:text-gray-300'
-)
+const providerTintClass = computed(() => {
+  if (isAnthropicCompatPlatform(props.item.provider)) return PROVIDER_TINT.anthropic
+  return PROVIDER_TINT[props.item.provider] ?? 'text-gray-500 dark:text-gray-300'
+})
 
 const availabilityLabel = computed(() => {
   const win = t(`channelStatus.windowTab.${props.window}`)

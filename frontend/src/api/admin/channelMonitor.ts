@@ -5,7 +5,16 @@
 
 import { apiClient } from '../client'
 
-export type Provider = 'openai' | 'anthropic' | 'gemini'
+export type Provider =
+  | 'openai'
+  | 'anthropic'
+  | 'gemini'
+  | 'anthropic-compatible'
+  | 'anthropic-zhipu'
+  | 'anthropic-kimi'
+  | 'anthropic-minimax'
+  | 'anthropic-qwen'
+  | 'anthropic-mimo'
 export type MonitorStatus = 'operational' | 'degraded' | 'failed' | 'error'
 export type BodyOverrideMode = 'off' | 'merge' | 'replace'
 

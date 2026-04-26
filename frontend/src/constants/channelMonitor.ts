@@ -12,11 +12,27 @@ import type { Provider, MonitorStatus } from '@/api/admin/channelMonitor'
 export const PROVIDER_OPENAI: Provider = 'openai'
 export const PROVIDER_ANTHROPIC: Provider = 'anthropic'
 export const PROVIDER_GEMINI: Provider = 'gemini'
+export const PROVIDER_ANTHROPIC_COMPATIBLE: Provider = 'anthropic-compatible'
+export const PROVIDER_ANTHROPIC_ZHIPU: Provider = 'anthropic-zhipu'
+export const PROVIDER_ANTHROPIC_KIMI: Provider = 'anthropic-kimi'
+export const PROVIDER_ANTHROPIC_MINIMAX: Provider = 'anthropic-minimax'
+export const PROVIDER_ANTHROPIC_QWEN: Provider = 'anthropic-qwen'
+export const PROVIDER_ANTHROPIC_MIMO: Provider = 'anthropic-mimo'
+
+export const ANTHROPIC_COMPAT_PROVIDERS: readonly Provider[] = [
+  PROVIDER_ANTHROPIC_COMPATIBLE,
+  PROVIDER_ANTHROPIC_ZHIPU,
+  PROVIDER_ANTHROPIC_KIMI,
+  PROVIDER_ANTHROPIC_MINIMAX,
+  PROVIDER_ANTHROPIC_QWEN,
+  PROVIDER_ANTHROPIC_MIMO,
+]
 
 export const PROVIDERS: readonly Provider[] = [
-  PROVIDER_OPENAI,
   PROVIDER_ANTHROPIC,
+  PROVIDER_OPENAI,
   PROVIDER_GEMINI,
+  ...ANTHROPIC_COMPAT_PROVIDERS,
 ]
 
 export const STATUS_OPERATIONAL: MonitorStatus = 'operational'

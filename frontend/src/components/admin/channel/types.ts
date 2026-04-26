@@ -193,6 +193,7 @@ export function getPlatformTagClass(platform: string): string {
 
 /** 平台对应的模型文字色（仅 text-*，用于 input/text 场景）— 与 getPlatformTagClass 同色系 */
 export function getPlatformTextClass(platform: string): string {
+  if (isAnthropicCompatPlatform(platform)) return 'text-orange-700 dark:text-orange-400'
   switch (platform) {
     case 'anthropic': return 'text-orange-700 dark:text-orange-400'
     case 'openai': return 'text-emerald-700 dark:text-emerald-400'

@@ -888,7 +888,13 @@ export default {
     providers: {
       openai: 'OpenAI',
       anthropic: 'Anthropic',
-      gemini: 'Gemini'
+      gemini: 'Gemini',
+      'anthropic-compatible': 'Other (Anthropic-compatible)',
+      'anthropic-zhipu': 'Zhipu GLM',
+      'anthropic-kimi': 'Kimi / Moonshot',
+      'anthropic-minimax': 'MiniMax',
+      'anthropic-qwen': 'Qwen / Tongyi',
+      'anthropic-mimo': 'Xiaomi MiMo'
     },
     extraModelsHeader: 'Extra Models',
     extraModelsEmpty: 'No extra models',
