@@ -70,6 +70,11 @@ func Name(v string) predicate.ChannelMonitorRequestTemplate {
 	return predicate.ChannelMonitorRequestTemplate(sql.FieldEQ(FieldName, v))
 }
 
+// Provider applies equality check predicate on the "provider" field. It's identical to ProviderEQ.
+func Provider(v string) predicate.ChannelMonitorRequestTemplate {
+	return predicate.ChannelMonitorRequestTemplate(sql.FieldEQ(FieldProvider, v))
+}
+
 // Description applies equality check predicate on the "description" field. It's identical to DescriptionEQ.
 func Description(v string) predicate.ChannelMonitorRequestTemplate {
 	return predicate.ChannelMonitorRequestTemplate(sql.FieldEQ(FieldDescription, v))
@@ -226,23 +231,68 @@ func NameContainsFold(v string) predicate.ChannelMonitorRequestTemplate {
 }
 
 // ProviderEQ applies the EQ predicate on the "provider" field.
-func ProviderEQ(v Provider) predicate.ChannelMonitorRequestTemplate {
+func ProviderEQ(v string) predicate.ChannelMonitorRequestTemplate {
 	return predicate.ChannelMonitorRequestTemplate(sql.FieldEQ(FieldProvider, v))
 }
 
 // ProviderNEQ applies the NEQ predicate on the "provider" field.
-func ProviderNEQ(v Provider) predicate.ChannelMonitorRequestTemplate {
+func ProviderNEQ(v string) predicate.ChannelMonitorRequestTemplate {
 	return predicate.ChannelMonitorRequestTemplate(sql.FieldNEQ(FieldProvider, v))
 }
 
 // ProviderIn applies the In predicate on the "provider" field.
-func ProviderIn(vs ...Provider) predicate.ChannelMonitorRequestTemplate {
+func ProviderIn(vs ...string) predicate.ChannelMonitorRequestTemplate {
 	return predicate.ChannelMonitorRequestTemplate(sql.FieldIn(FieldProvider, vs...))
 }
 
 // ProviderNotIn applies the NotIn predicate on the "provider" field.
-func ProviderNotIn(vs ...Provider) predicate.ChannelMonitorRequestTemplate {
+func ProviderNotIn(vs ...string) predicate.ChannelMonitorRequestTemplate {
 	return predicate.ChannelMonitorRequestTemplate(sql.FieldNotIn(FieldProvider, vs...))
+}
+
+// ProviderGT applies the GT predicate on the "provider" field.
+func ProviderGT(v string) predicate.ChannelMonitorRequestTemplate {
+	return predicate.ChannelMonitorRequestTemplate(sql.FieldGT(FieldProvider, v))
+}
+
+// ProviderGTE applies the GTE predicate on the "provider" field.
+func ProviderGTE(v string) predicate.ChannelMonitorRequestTemplate {
+	return predicate.ChannelMonitorRequestTemplate(sql.FieldGTE(FieldProvider, v))
+}
+
+// ProviderLT applies the LT predicate on the "provider" field.
+func ProviderLT(v string) predicate.ChannelMonitorRequestTemplate {
+	return predicate.ChannelMonitorRequestTemplate(sql.FieldLT(FieldProvider, v))
+}
+
+// ProviderLTE applies the LTE predicate on the "provider" field.
+func ProviderLTE(v string) predicate.ChannelMonitorRequestTemplate {
+	return predicate.ChannelMonitorRequestTemplate(sql.FieldLTE(FieldProvider, v))
+}
+
+// ProviderContains applies the Contains predicate on the "provider" field.
+func ProviderContains(v string) predicate.ChannelMonitorRequestTemplate {
+	return predicate.ChannelMonitorRequestTemplate(sql.FieldContains(FieldProvider, v))
+}
+
+// ProviderHasPrefix applies the HasPrefix predicate on the "provider" field.
+func ProviderHasPrefix(v string) predicate.ChannelMonitorRequestTemplate {
+	return predicate.ChannelMonitorRequestTemplate(sql.FieldHasPrefix(FieldProvider, v))
+}
+
+// ProviderHasSuffix applies the HasSuffix predicate on the "provider" field.
+func ProviderHasSuffix(v string) predicate.ChannelMonitorRequestTemplate {
+	return predicate.ChannelMonitorRequestTemplate(sql.FieldHasSuffix(FieldProvider, v))
+}
+
+// ProviderEqualFold applies the EqualFold predicate on the "provider" field.
+func ProviderEqualFold(v string) predicate.ChannelMonitorRequestTemplate {
+	return predicate.ChannelMonitorRequestTemplate(sql.FieldEqualFold(FieldProvider, v))
+}
+
+// ProviderContainsFold applies the ContainsFold predicate on the "provider" field.
+func ProviderContainsFold(v string) predicate.ChannelMonitorRequestTemplate {
+	return predicate.ChannelMonitorRequestTemplate(sql.FieldContainsFold(FieldProvider, v))
 }
 
 // DescriptionEQ applies the EQ predicate on the "description" field.

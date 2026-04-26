@@ -9397,7 +9397,7 @@ type ChannelMonitorMutation struct {
 	created_at              *time.Time
 	updated_at              *time.Time
 	name                    *string
-	provider                *channelmonitor.Provider
+	provider                *string
 	endpoint                *string
 	api_key_encrypted       *string
 	primary_model           *string
@@ -9634,12 +9634,12 @@ func (m *ChannelMonitorMutation) ResetName() {
 }
 
 // SetProvider sets the "provider" field.
-func (m *ChannelMonitorMutation) SetProvider(c channelmonitor.Provider) {
-	m.provider = &c
+func (m *ChannelMonitorMutation) SetProvider(s string) {
+	m.provider = &s
 }
 
 // Provider returns the value of the "provider" field in the mutation.
-func (m *ChannelMonitorMutation) Provider() (r channelmonitor.Provider, exists bool) {
+func (m *ChannelMonitorMutation) Provider() (r string, exists bool) {
 	v := m.provider
 	if v == nil {
 		return
@@ -9650,7 +9650,7 @@ func (m *ChannelMonitorMutation) Provider() (r channelmonitor.Provider, exists b
 // OldProvider returns the old "provider" field's value of the ChannelMonitor entity.
 // If the ChannelMonitor object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *ChannelMonitorMutation) OldProvider(ctx context.Context) (v channelmonitor.Provider, err error) {
+func (m *ChannelMonitorMutation) OldProvider(ctx context.Context) (v string, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldProvider is only allowed on UpdateOne operations")
 	}
@@ -10594,7 +10594,7 @@ func (m *ChannelMonitorMutation) SetField(name string, value ent.Value) error {
 		m.SetName(v)
 		return nil
 	case channelmonitor.FieldProvider:
-		v, ok := value.(channelmonitor.Provider)
+		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
@@ -13236,7 +13236,7 @@ type ChannelMonitorRequestTemplateMutation struct {
 	created_at         *time.Time
 	updated_at         *time.Time
 	name               *string
-	provider           *channelmonitorrequesttemplate.Provider
+	provider           *string
 	description        *string
 	extra_headers      *map[string]string
 	body_override_mode *string
@@ -13457,12 +13457,12 @@ func (m *ChannelMonitorRequestTemplateMutation) ResetName() {
 }
 
 // SetProvider sets the "provider" field.
-func (m *ChannelMonitorRequestTemplateMutation) SetProvider(c channelmonitorrequesttemplate.Provider) {
-	m.provider = &c
+func (m *ChannelMonitorRequestTemplateMutation) SetProvider(s string) {
+	m.provider = &s
 }
 
 // Provider returns the value of the "provider" field in the mutation.
-func (m *ChannelMonitorRequestTemplateMutation) Provider() (r channelmonitorrequesttemplate.Provider, exists bool) {
+func (m *ChannelMonitorRequestTemplateMutation) Provider() (r string, exists bool) {
 	v := m.provider
 	if v == nil {
 		return
@@ -13473,7 +13473,7 @@ func (m *ChannelMonitorRequestTemplateMutation) Provider() (r channelmonitorrequ
 // OldProvider returns the old "provider" field's value of the ChannelMonitorRequestTemplate entity.
 // If the ChannelMonitorRequestTemplate object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *ChannelMonitorRequestTemplateMutation) OldProvider(ctx context.Context) (v channelmonitorrequesttemplate.Provider, err error) {
+func (m *ChannelMonitorRequestTemplateMutation) OldProvider(ctx context.Context) (v string, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldProvider is only allowed on UpdateOne operations")
 	}
@@ -13855,7 +13855,7 @@ func (m *ChannelMonitorRequestTemplateMutation) SetField(name string, value ent.
 		m.SetName(v)
 		return nil
 	case channelmonitorrequesttemplate.FieldProvider:
-		v, ok := value.(channelmonitorrequesttemplate.Provider)
+		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}

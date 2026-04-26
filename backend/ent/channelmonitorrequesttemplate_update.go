@@ -50,13 +50,13 @@ func (_u *ChannelMonitorRequestTemplateUpdate) SetNillableName(v *string) *Chann
 }
 
 // SetProvider sets the "provider" field.
-func (_u *ChannelMonitorRequestTemplateUpdate) SetProvider(v channelmonitorrequesttemplate.Provider) *ChannelMonitorRequestTemplateUpdate {
+func (_u *ChannelMonitorRequestTemplateUpdate) SetProvider(v string) *ChannelMonitorRequestTemplateUpdate {
 	_u.mutation.SetProvider(v)
 	return _u
 }
 
 // SetNillableProvider sets the "provider" field if the given value is not nil.
-func (_u *ChannelMonitorRequestTemplateUpdate) SetNillableProvider(v *channelmonitorrequesttemplate.Provider) *ChannelMonitorRequestTemplateUpdate {
+func (_u *ChannelMonitorRequestTemplateUpdate) SetNillableProvider(v *string) *ChannelMonitorRequestTemplateUpdate {
 	if v != nil {
 		_u.SetProvider(*v)
 	}
@@ -236,7 +236,7 @@ func (_u *ChannelMonitorRequestTemplateUpdate) sqlSave(ctx context.Context) (_no
 		_spec.SetField(channelmonitorrequesttemplate.FieldName, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Provider(); ok {
-		_spec.SetField(channelmonitorrequesttemplate.FieldProvider, field.TypeEnum, value)
+		_spec.SetField(channelmonitorrequesttemplate.FieldProvider, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Description(); ok {
 		_spec.SetField(channelmonitorrequesttemplate.FieldDescription, field.TypeString, value)
@@ -342,13 +342,13 @@ func (_u *ChannelMonitorRequestTemplateUpdateOne) SetNillableName(v *string) *Ch
 }
 
 // SetProvider sets the "provider" field.
-func (_u *ChannelMonitorRequestTemplateUpdateOne) SetProvider(v channelmonitorrequesttemplate.Provider) *ChannelMonitorRequestTemplateUpdateOne {
+func (_u *ChannelMonitorRequestTemplateUpdateOne) SetProvider(v string) *ChannelMonitorRequestTemplateUpdateOne {
 	_u.mutation.SetProvider(v)
 	return _u
 }
 
 // SetNillableProvider sets the "provider" field if the given value is not nil.
-func (_u *ChannelMonitorRequestTemplateUpdateOne) SetNillableProvider(v *channelmonitorrequesttemplate.Provider) *ChannelMonitorRequestTemplateUpdateOne {
+func (_u *ChannelMonitorRequestTemplateUpdateOne) SetNillableProvider(v *string) *ChannelMonitorRequestTemplateUpdateOne {
 	if v != nil {
 		_u.SetProvider(*v)
 	}
@@ -558,7 +558,7 @@ func (_u *ChannelMonitorRequestTemplateUpdateOne) sqlSave(ctx context.Context) (
 		_spec.SetField(channelmonitorrequesttemplate.FieldName, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Provider(); ok {
-		_spec.SetField(channelmonitorrequesttemplate.FieldProvider, field.TypeEnum, value)
+		_spec.SetField(channelmonitorrequesttemplate.FieldProvider, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Description(); ok {
 		_spec.SetField(channelmonitorrequesttemplate.FieldDescription, field.TypeString, value)

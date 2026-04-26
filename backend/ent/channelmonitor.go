@@ -26,8 +26,8 @@ type ChannelMonitor struct {
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
 	// Provider holds the value of the "provider" field.
-	Provider channelmonitor.Provider `json:"provider,omitempty"`
-	// Provider base origin, e.g. https://api.openai.com
+	Provider string `json:"provider,omitempty"`
+	// Provider base URL, e.g. https://api.openai.com or compat URL with path prefix
 	Endpoint string `json:"endpoint,omitempty"`
 	// AES-256-GCM encrypted API key
 	APIKeyEncrypted string `json:"-"`
@@ -159,7 +159,7 @@ func (_m *ChannelMonitor) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field provider", values[i])
 			} else if value.Valid {
-				_m.Provider = channelmonitor.Provider(value.String)
+				_m.Provider = value.String
 			}
 		case channelmonitor.FieldEndpoint:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -308,7 +308,7 @@ func (_m *ChannelMonitor) String() string {
 	builder.WriteString(_m.Name)
 	builder.WriteString(", ")
 	builder.WriteString("provider=")
-	builder.WriteString(fmt.Sprintf("%v", _m.Provider))
+	builder.WriteString(_m.Provider)
 	builder.WriteString(", ")
 	builder.WriteString("endpoint=")
 	builder.WriteString(_m.Endpoint)

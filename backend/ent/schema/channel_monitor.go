@@ -34,12 +34,13 @@ func (ChannelMonitor) Fields() []ent.Field {
 		field.String("name").
 			NotEmpty().
 			MaxLen(100),
-		field.Enum("provider").
-			Values("openai", "anthropic", "gemini"),
+		field.String("provider").
+			NotEmpty().
+			MaxLen(50),
 		field.String("endpoint").
 			NotEmpty().
 			MaxLen(500).
-			Comment("Provider base origin, e.g. https://api.openai.com"),
+			Comment("Provider base URL, e.g. https://api.openai.com or compat URL with path prefix"),
 		field.String("api_key_encrypted").
 			NotEmpty().
 			Sensitive().

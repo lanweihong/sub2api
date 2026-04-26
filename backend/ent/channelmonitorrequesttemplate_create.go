@@ -58,7 +58,7 @@ func (_c *ChannelMonitorRequestTemplateCreate) SetName(v string) *ChannelMonitor
 }
 
 // SetProvider sets the "provider" field.
-func (_c *ChannelMonitorRequestTemplateCreate) SetProvider(v channelmonitorrequesttemplate.Provider) *ChannelMonitorRequestTemplateCreate {
+func (_c *ChannelMonitorRequestTemplateCreate) SetProvider(v string) *ChannelMonitorRequestTemplateCreate {
 	_c.mutation.SetProvider(v)
 	return _c
 }
@@ -255,7 +255,7 @@ func (_c *ChannelMonitorRequestTemplateCreate) createSpec() (*ChannelMonitorRequ
 		_node.Name = value
 	}
 	if value, ok := _c.mutation.Provider(); ok {
-		_spec.SetField(channelmonitorrequesttemplate.FieldProvider, field.TypeEnum, value)
+		_spec.SetField(channelmonitorrequesttemplate.FieldProvider, field.TypeString, value)
 		_node.Provider = value
 	}
 	if value, ok := _c.mutation.Description(); ok {
@@ -367,7 +367,7 @@ func (u *ChannelMonitorRequestTemplateUpsert) UpdateName() *ChannelMonitorReques
 }
 
 // SetProvider sets the "provider" field.
-func (u *ChannelMonitorRequestTemplateUpsert) SetProvider(v channelmonitorrequesttemplate.Provider) *ChannelMonitorRequestTemplateUpsert {
+func (u *ChannelMonitorRequestTemplateUpsert) SetProvider(v string) *ChannelMonitorRequestTemplateUpsert {
 	u.Set(channelmonitorrequesttemplate.FieldProvider, v)
 	return u
 }
@@ -512,7 +512,7 @@ func (u *ChannelMonitorRequestTemplateUpsertOne) UpdateName() *ChannelMonitorReq
 }
 
 // SetProvider sets the "provider" field.
-func (u *ChannelMonitorRequestTemplateUpsertOne) SetProvider(v channelmonitorrequesttemplate.Provider) *ChannelMonitorRequestTemplateUpsertOne {
+func (u *ChannelMonitorRequestTemplateUpsertOne) SetProvider(v string) *ChannelMonitorRequestTemplateUpsertOne {
 	return u.Update(func(s *ChannelMonitorRequestTemplateUpsert) {
 		s.SetProvider(v)
 	})
@@ -835,7 +835,7 @@ func (u *ChannelMonitorRequestTemplateUpsertBulk) UpdateName() *ChannelMonitorRe
 }
 
 // SetProvider sets the "provider" field.
-func (u *ChannelMonitorRequestTemplateUpsertBulk) SetProvider(v channelmonitorrequesttemplate.Provider) *ChannelMonitorRequestTemplateUpsertBulk {
+func (u *ChannelMonitorRequestTemplateUpsertBulk) SetProvider(v string) *ChannelMonitorRequestTemplateUpsertBulk {
 	return u.Update(func(s *ChannelMonitorRequestTemplateUpsert) {
 		s.SetProvider(v)
 	})

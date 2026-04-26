@@ -476,6 +476,24 @@ func init() {
 			return nil
 		}
 	}()
+	// channelmonitorDescProvider is the schema descriptor for provider field.
+	channelmonitorDescProvider := channelmonitorFields[1].Descriptor()
+	// channelmonitor.ProviderValidator is a validator for the "provider" field. It is called by the builders before save.
+	channelmonitor.ProviderValidator = func() func(string) error {
+		validators := channelmonitorDescProvider.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(provider string) error {
+			for _, fn := range fns {
+				if err := fn(provider); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
 	// channelmonitorDescEndpoint is the schema descriptor for endpoint field.
 	channelmonitorDescEndpoint := channelmonitorFields[2].Descriptor()
 	// channelmonitor.EndpointValidator is a validator for the "endpoint" field. It is called by the builders before save.
@@ -667,6 +685,24 @@ func init() {
 		return func(name string) error {
 			for _, fn := range fns {
 				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// channelmonitorrequesttemplateDescProvider is the schema descriptor for provider field.
+	channelmonitorrequesttemplateDescProvider := channelmonitorrequesttemplateFields[1].Descriptor()
+	// channelmonitorrequesttemplate.ProviderValidator is a validator for the "provider" field. It is called by the builders before save.
+	channelmonitorrequesttemplate.ProviderValidator = func() func(string) error {
+		validators := channelmonitorrequesttemplateDescProvider.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(provider string) error {
+			for _, fn := range fns {
+				if err := fn(provider); err != nil {
 					return err
 				}
 			}

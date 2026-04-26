@@ -53,13 +53,13 @@ func (_u *ChannelMonitorUpdate) SetNillableName(v *string) *ChannelMonitorUpdate
 }
 
 // SetProvider sets the "provider" field.
-func (_u *ChannelMonitorUpdate) SetProvider(v channelmonitor.Provider) *ChannelMonitorUpdate {
+func (_u *ChannelMonitorUpdate) SetProvider(v string) *ChannelMonitorUpdate {
 	_u.mutation.SetProvider(v)
 	return _u
 }
 
 // SetNillableProvider sets the "provider" field if the given value is not nil.
-func (_u *ChannelMonitorUpdate) SetNillableProvider(v *channelmonitor.Provider) *ChannelMonitorUpdate {
+func (_u *ChannelMonitorUpdate) SetNillableProvider(v *string) *ChannelMonitorUpdate {
 	if v != nil {
 		_u.SetProvider(*v)
 	}
@@ -470,7 +470,7 @@ func (_u *ChannelMonitorUpdate) sqlSave(ctx context.Context) (_node int, err err
 		_spec.SetField(channelmonitor.FieldName, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Provider(); ok {
-		_spec.SetField(channelmonitor.FieldProvider, field.TypeEnum, value)
+		_spec.SetField(channelmonitor.FieldProvider, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Endpoint(); ok {
 		_spec.SetField(channelmonitor.FieldEndpoint, field.TypeString, value)
@@ -688,13 +688,13 @@ func (_u *ChannelMonitorUpdateOne) SetNillableName(v *string) *ChannelMonitorUpd
 }
 
 // SetProvider sets the "provider" field.
-func (_u *ChannelMonitorUpdateOne) SetProvider(v channelmonitor.Provider) *ChannelMonitorUpdateOne {
+func (_u *ChannelMonitorUpdateOne) SetProvider(v string) *ChannelMonitorUpdateOne {
 	_u.mutation.SetProvider(v)
 	return _u
 }
 
 // SetNillableProvider sets the "provider" field if the given value is not nil.
-func (_u *ChannelMonitorUpdateOne) SetNillableProvider(v *channelmonitor.Provider) *ChannelMonitorUpdateOne {
+func (_u *ChannelMonitorUpdateOne) SetNillableProvider(v *string) *ChannelMonitorUpdateOne {
 	if v != nil {
 		_u.SetProvider(*v)
 	}
@@ -1135,7 +1135,7 @@ func (_u *ChannelMonitorUpdateOne) sqlSave(ctx context.Context) (_node *ChannelM
 		_spec.SetField(channelmonitor.FieldName, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Provider(); ok {
-		_spec.SetField(channelmonitor.FieldProvider, field.TypeEnum, value)
+		_spec.SetField(channelmonitor.FieldProvider, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Endpoint(); ok {
 		_spec.SetField(channelmonitor.FieldEndpoint, field.TypeString, value)

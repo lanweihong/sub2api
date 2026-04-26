@@ -25,7 +25,7 @@ type ChannelMonitorRequestTemplate struct {
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
 	// Provider holds the value of the "provider" field.
-	Provider channelmonitorrequesttemplate.Provider `json:"provider,omitempty"`
+	Provider string `json:"provider,omitempty"`
 	// Description holds the value of the "description" field.
 	Description string `json:"description,omitempty"`
 	// ExtraHeaders holds the value of the "extra_headers" field.
@@ -114,7 +114,7 @@ func (_m *ChannelMonitorRequestTemplate) assignValues(columns []string, values [
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field provider", values[i])
 			} else if value.Valid {
-				_m.Provider = channelmonitorrequesttemplate.Provider(value.String)
+				_m.Provider = value.String
 			}
 		case channelmonitorrequesttemplate.FieldDescription:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -195,7 +195,7 @@ func (_m *ChannelMonitorRequestTemplate) String() string {
 	builder.WriteString(_m.Name)
 	builder.WriteString(", ")
 	builder.WriteString("provider=")
-	builder.WriteString(fmt.Sprintf("%v", _m.Provider))
+	builder.WriteString(_m.Provider)
 	builder.WriteString(", ")
 	builder.WriteString("description=")
 	builder.WriteString(_m.Description)

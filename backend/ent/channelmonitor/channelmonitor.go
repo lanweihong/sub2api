@@ -3,7 +3,6 @@
 package channelmonitor
 
 import (
-	"fmt"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -121,6 +120,8 @@ var (
 	UpdateDefaultUpdatedAt func() time.Time
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
+	// ProviderValidator is a validator for the "provider" field. It is called by the builders before save.
+	ProviderValidator func(string) error
 	// EndpointValidator is a validator for the "endpoint" field. It is called by the builders before save.
 	EndpointValidator func(string) error
 	// APIKeyEncryptedValidator is a validator for the "api_key_encrypted" field. It is called by the builders before save.
@@ -144,30 +145,6 @@ var (
 	// BodyOverrideModeValidator is a validator for the "body_override_mode" field. It is called by the builders before save.
 	BodyOverrideModeValidator func(string) error
 )
-
-// Provider defines the type for the "provider" enum field.
-type Provider string
-
-// Provider values.
-const (
-	ProviderOpenai    Provider = "openai"
-	ProviderAnthropic Provider = "anthropic"
-	ProviderGemini    Provider = "gemini"
-)
-
-func (pr Provider) String() string {
-	return string(pr)
-}
-
-// ProviderValidator is a validator for the "provider" field enum values. It is called by the builders before save.
-func ProviderValidator(pr Provider) error {
-	switch pr {
-	case ProviderOpenai, ProviderAnthropic, ProviderGemini:
-		return nil
-	default:
-		return fmt.Errorf("channelmonitor: invalid enum value for provider field: %q", pr)
-	}
-}
 
 // OrderOption defines the ordering options for the ChannelMonitor queries.
 type OrderOption func(*sql.Selector)

@@ -60,7 +60,7 @@ func (_c *ChannelMonitorCreate) SetName(v string) *ChannelMonitorCreate {
 }
 
 // SetProvider sets the "provider" field.
-func (_c *ChannelMonitorCreate) SetProvider(v channelmonitor.Provider) *ChannelMonitorCreate {
+func (_c *ChannelMonitorCreate) SetProvider(v string) *ChannelMonitorCreate {
 	_c.mutation.SetProvider(v)
 	return _c
 }
@@ -418,7 +418,7 @@ func (_c *ChannelMonitorCreate) createSpec() (*ChannelMonitor, *sqlgraph.CreateS
 		_node.Name = value
 	}
 	if value, ok := _c.mutation.Provider(); ok {
-		_spec.SetField(channelmonitor.FieldProvider, field.TypeEnum, value)
+		_spec.SetField(channelmonitor.FieldProvider, field.TypeString, value)
 		_node.Provider = value
 	}
 	if value, ok := _c.mutation.Endpoint(); ok {
@@ -595,7 +595,7 @@ func (u *ChannelMonitorUpsert) UpdateName() *ChannelMonitorUpsert {
 }
 
 // SetProvider sets the "provider" field.
-func (u *ChannelMonitorUpsert) SetProvider(v channelmonitor.Provider) *ChannelMonitorUpsert {
+func (u *ChannelMonitorUpsert) SetProvider(v string) *ChannelMonitorUpsert {
 	u.Set(channelmonitor.FieldProvider, v)
 	return u
 }
@@ -872,7 +872,7 @@ func (u *ChannelMonitorUpsertOne) UpdateName() *ChannelMonitorUpsertOne {
 }
 
 // SetProvider sets the "provider" field.
-func (u *ChannelMonitorUpsertOne) SetProvider(v channelmonitor.Provider) *ChannelMonitorUpsertOne {
+func (u *ChannelMonitorUpsertOne) SetProvider(v string) *ChannelMonitorUpsertOne {
 	return u.Update(func(s *ChannelMonitorUpsert) {
 		s.SetProvider(v)
 	})
@@ -1349,7 +1349,7 @@ func (u *ChannelMonitorUpsertBulk) UpdateName() *ChannelMonitorUpsertBulk {
 }
 
 // SetProvider sets the "provider" field.
-func (u *ChannelMonitorUpsertBulk) SetProvider(v channelmonitor.Provider) *ChannelMonitorUpsertBulk {
+func (u *ChannelMonitorUpsertBulk) SetProvider(v string) *ChannelMonitorUpsertBulk {
 	return u.Update(func(s *ChannelMonitorUpsert) {
 		s.SetProvider(v)
 	})
