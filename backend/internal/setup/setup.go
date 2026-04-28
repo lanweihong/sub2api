@@ -303,9 +303,9 @@ func Install(cfg *SetupConfig) error {
 		return fmt.Errorf("database initialization failed: %w", err)
 	}
 
-	// Create admin user (only when database is empty and no admin exists).
+	// Create super admin user (only when database is empty and no admin exists).
 	if _, _, err := createAdminUser(cfg); err != nil {
-		return fmt.Errorf("admin user creation failed: %w", err)
+		return fmt.Errorf("super admin user creation failed: %w", err)
 	}
 
 	// Write config file
@@ -373,11 +373,11 @@ func createAdminUser(cfg *SetupConfig) (bool, string, error) {
 	defer cancel()
 
 	var totalUsers int64
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(1) FROM users").Scan(&totalUsers); err != nil {
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(1) FROM users WHERE deleted_at IS NULL").Scan(&totalUsers); err != nil {
 		return false, "", err
 	}
 	var adminUsers int64
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(1) FROM users WHERE role = $1", service.RoleAdmin).Scan(&adminUsers); err != nil {
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(1) FROM users WHERE role IN ($1, $2) AND deleted_at IS NULL", service.RoleSuperAdmin, service.RoleAdmin).Scan(&adminUsers); err != nil {
 		return false, "", err
 	}
 	decision := decideAdminBootstrap(totalUsers, adminUsers)
@@ -397,7 +397,7 @@ func createAdminUser(cfg *SetupConfig) (bool, string, error) {
 
 	admin := &service.User{
 		Email:       cfg.Admin.Email,
-		Role:        service.RoleAdmin,
+		Role:        service.RoleSuperAdmin,
 		Status:      service.StatusActive,
 		Balance:     0,
 		Concurrency: setupDefaultAdminConcurrency(),
@@ -607,18 +607,18 @@ func AutoSetupFromEnv() error {
 	}
 	logger.LegacyPrintf("setup", "%s", "Database initialized successfully")
 
-	// Create admin user
-	logger.LegacyPrintf("setup", "%s", "Creating admin user...")
+	// Create super admin user
+	logger.LegacyPrintf("setup", "%s", "Creating super admin user...")
 	created, reason, err := createAdminUser(cfg)
 	if err != nil {
-		return fmt.Errorf("admin user creation failed: %w", err)
+		return fmt.Errorf("super admin user creation failed: %w", err)
 	}
 	if created {
-		logger.LegacyPrintf("setup", "Admin user created: %s", cfg.Admin.Email)
+		logger.LegacyPrintf("setup", "Super admin user created: %s", cfg.Admin.Email)
 	} else {
 		switch reason {
 		case adminBootstrapReasonAdminExists:
-			logger.LegacyPrintf("setup", "%s", "Admin user already exists, skipping admin bootstrap")
+			logger.LegacyPrintf("setup", "%s", "Admin user already exists, skipping super admin bootstrap")
 		case adminBootstrapReasonUsersExistWithoutAdmin:
 			logger.LegacyPrintf("setup", "%s", "Database already has user data; skipping auto admin bootstrap to avoid password overwrite")
 		default:

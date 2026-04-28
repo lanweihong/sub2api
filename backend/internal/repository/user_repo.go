@@ -825,15 +825,25 @@ func (r *userRepository) RemoveGroupFromUserAllowedGroups(ctx context.Context, u
 }
 
 func (r *userRepository) GetFirstAdmin(ctx context.Context) (*service.User, error) {
-	m, err := r.client.User.Query().
-		Where(
-			dbuser.RoleEQ(service.RoleAdmin),
-			dbuser.StatusEQ(service.StatusActive),
-		).
-		Order(dbent.Asc(dbuser.FieldID)).
-		First(ctx)
-	if err != nil {
-		return nil, translatePersistenceError(err, service.ErrUserNotFound, nil)
+	var m *dbent.User
+	var err error
+	for _, role := range []string{service.RoleSuperAdmin, service.RoleAdmin} {
+		m, err = r.client.User.Query().
+			Where(
+				dbuser.RoleEQ(role),
+				dbuser.StatusEQ(service.StatusActive),
+			).
+			Order(dbent.Asc(dbuser.FieldID)).
+			First(ctx)
+		if err == nil {
+			break
+		}
+		if !dbent.IsNotFound(err) {
+			return nil, translatePersistenceError(err, service.ErrUserNotFound, nil)
+		}
+	}
+	if m == nil {
+		return nil, service.ErrUserNotFound
 	}
 
 	out := userEntityToService(m)
