@@ -14,9 +14,19 @@ const (
 
 // Role constants
 const (
-	RoleAdmin = "admin"
-	RoleUser  = "user"
+	RoleSuperAdmin = "super_admin"
+	RoleAdmin      = "admin"
+	RoleUser       = "user"
 )
+
+func IsSuperAdminRole(role string) bool {
+	return strings.TrimSpace(role) == RoleSuperAdmin
+}
+
+func IsAdminRole(role string) bool {
+	role = strings.TrimSpace(role)
+	return role == RoleSuperAdmin || role == RoleAdmin
+}
 
 // 平台标识常量
 const (
