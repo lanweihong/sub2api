@@ -28,6 +28,10 @@ interface PendingAuthSessionSummary {
   suggested_avatar_url?: string
 }
 
+function isAdminRole(role: string | null | undefined): boolean {
+  return role === 'super_admin' || role === 'admin'
+}
+
 function normalizePendingAuthTokenField(value: unknown): PendingAuthTokenField {
   return value === 'pending_oauth_token' ? 'pending_oauth_token' : 'pending_auth_token'
 }
@@ -87,7 +91,11 @@ export const useAuthStore = defineStore('auth', () => {
   })
 
   const isAdmin = computed(() => {
-    return user.value?.role === 'admin'
+    return isAdminRole(user.value?.role)
+  })
+
+  const isSuperAdmin = computed(() => {
+    return user.value?.role === 'super_admin'
   })
 
   const isSimpleMode = computed(() => runMode.value === 'simple')
@@ -476,6 +484,7 @@ export const useAuthStore = defineStore('auth', () => {
     // Computed
     isAuthenticated,
     isAdmin,
+    isSuperAdmin,
     isSimpleMode,
     hasPendingAuthSession,
 
