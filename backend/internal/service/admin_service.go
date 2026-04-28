@@ -131,6 +131,8 @@ type UpdateUserInput struct {
 	Password      string
 	Username      *string
 	Notes         *string
+	Role          string
+	RequesterRole string
 	Balance       *float64 // 使用指针区分"未提供"和"设置为0"
 	Concurrency   *int     // 使用指针区分"未提供"和"设置为0"
 	RPMLimit      *int     // 使用指针区分"未提供"和"设置为0"
@@ -145,6 +147,7 @@ type AdminBindAuthIdentityInput struct {
 	ProviderType    string
 	ProviderKey     string
 	ProviderSubject string
+	RequesterRole   string
 	Issuer          *string
 	Metadata        map[string]any
 	Channel         *AdminBindAuthIdentityChannelInput
@@ -708,16 +711,30 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 	if err != nil {
 		return nil, err
 	}
-
-	// Protect admin users: cannot disable admin accounts
-	if user.Role == "admin" && input.Status == "disabled" {
-		return nil, errors.New("cannot disable admin user")
+	if user.IsSuperAdmin() && !IsSuperAdminRole(input.RequesterRole) {
+		return nil, ErrInsufficientPerms
 	}
 
 	oldConcurrency := user.Concurrency
 	oldStatus := user.Status
 	oldRole := user.Role
 	oldRPMLimit := user.RPMLimit
+
+	if user.IsSuperAdmin() && input.Role != "" && input.Role != user.Role {
+		return nil, infraerrors.Forbidden("SUPER_ADMIN_PROTECTED", "cannot change super admin role")
+	}
+
+	if input.Role != "" && input.Role != user.Role {
+		if !IsSuperAdminRole(input.RequesterRole) {
+			return nil, ErrInsufficientPerms
+		}
+		switch input.Role {
+		case RoleAdmin, RoleUser:
+			user.Role = input.Role
+		default:
+			return nil, infraerrors.BadRequest("INVALID_USER_ROLE", "invalid user role")
+		}
+	}
 
 	if input.Email != "" {
 		user.Email = input.Email
@@ -737,6 +754,9 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 
 	if input.Status != "" {
 		user.Status = input.Status
+	}
+	if IsAdminRole(user.Role) && user.Status == StatusDisabled {
+		return nil, infraerrors.Forbidden("ADMIN_USER_PROTECTED", "cannot disable admin user")
 	}
 
 	if input.Concurrency != nil {
@@ -800,8 +820,8 @@ func (s *adminServiceImpl) DeleteUser(ctx context.Context, id int64) error {
 	if err != nil {
 		return err
 	}
-	if user.Role == "admin" {
-		return errors.New("cannot delete admin user")
+	if user.IsAdmin() {
+		return infraerrors.Forbidden("ADMIN_USER_PROTECTED", "cannot delete admin user")
 	}
 	if err := s.userRepo.Delete(ctx, id); err != nil {
 		logger.LegacyPrintf("service.admin", "delete user failed: user_id=%d err=%v", id, err)
@@ -1031,8 +1051,12 @@ func (s *adminServiceImpl) BindUserAuthIdentity(ctx context.Context, userID int6
 	if s == nil || s.entClient == nil || s.userRepo == nil {
 		return nil, infraerrors.InternalServer("ADMIN_AUTH_IDENTITY_BIND_UNAVAILABLE", "auth identity binding service is unavailable")
 	}
-	if _, err := s.userRepo.GetByID(ctx, userID); err != nil {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
 		return nil, err
+	}
+	if user.IsSuperAdmin() && !IsSuperAdminRole(input.RequesterRole) {
+		return nil, ErrInsufficientPerms
 	}
 
 	providerType := normalizeAdminAuthIdentityProviderType(input.ProviderType)

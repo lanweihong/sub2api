@@ -7,6 +7,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
+	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -51,6 +52,7 @@ type UpdateUserRequest struct {
 	Password      string   `json:"password" binding:"omitempty,min=6"`
 	Username      *string  `json:"username"`
 	Notes         *string  `json:"notes"`
+	Role          string   `json:"role" binding:"omitempty,oneof=admin user"`
 	Balance       *float64 `json:"balance"`
 	Concurrency   *int     `json:"concurrency"`
 	RPMLimit      *int     `json:"rpm_limit"`
@@ -209,6 +211,7 @@ func (h *UserHandler) BindAuthIdentity(c *gin.Context) {
 		ProviderType:    req.ProviderType,
 		ProviderKey:     req.ProviderKey,
 		ProviderSubject: req.ProviderSubject,
+		RequesterRole:   requesterRoleFromContext(c),
 		Issuer:          req.Issuer,
 		Metadata:        req.Metadata,
 	}
@@ -277,6 +280,8 @@ func (h *UserHandler) Update(c *gin.Context) {
 		Password:      req.Password,
 		Username:      req.Username,
 		Notes:         req.Notes,
+		Role:          req.Role,
+		RequesterRole: requesterRoleFromContext(c),
 		Balance:       req.Balance,
 		Concurrency:   req.Concurrency,
 		RPMLimit:      req.RPMLimit,
@@ -290,6 +295,11 @@ func (h *UserHandler) Update(c *gin.Context) {
 	}
 
 	response.Success(c, dto.UserFromServiceAdmin(user))
+}
+
+func requesterRoleFromContext(c *gin.Context) string {
+	role, _ := middleware.GetUserRoleFromContext(c)
+	return role
 }
 
 // Delete handles deleting a user
