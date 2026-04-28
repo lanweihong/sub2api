@@ -141,6 +141,32 @@ func TestAdminServiceBindUserAuthIdentityRejectsOtherOwner(t *testing.T) {
 	require.Equal(t, "AUTH_IDENTITY_OWNERSHIP_CONFLICT", infraerrors.Reason(err))
 }
 
+func TestAdminServiceBindUserAuthIdentityRejectsAdminBindingForSuperAdmin(t *testing.T) {
+	client := newAdminServiceAuthIdentityBindingTestClient(t)
+	ctx := context.Background()
+
+	superAdmin, err := client.User.Create().
+		SetEmail("super-admin@example.com").
+		SetPasswordHash("hash").
+		SetRole(RoleSuperAdmin).
+		SetStatus(StatusActive).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &adminServiceImpl{
+		userRepo:  &userRepoStub{user: &User{ID: superAdmin.ID, Email: superAdmin.Email, Role: RoleSuperAdmin, Status: StatusActive}},
+		entClient: client,
+	}
+
+	_, err = svc.BindUserAuthIdentity(ctx, superAdmin.ID, AdminBindAuthIdentityInput{
+		ProviderType:    "oidc",
+		ProviderKey:     "https://issuer.example",
+		ProviderSubject: "subject-guarded",
+		RequesterRole:   RoleAdmin,
+	})
+	require.ErrorIs(t, err, ErrInsufficientPerms)
+}
+
 func TestAdminServiceBindUserAuthIdentityIsIdempotentForSameUser(t *testing.T) {
 	client := newAdminServiceAuthIdentityBindingTestClient(t)
 	ctx := context.Background()

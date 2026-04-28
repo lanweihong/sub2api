@@ -67,3 +67,91 @@ func TestAdminService_UpdateUser_NoInvalidateWhenRPMLimitUnchanged(t *testing.T)
 	require.NoError(t, err)
 	require.Empty(t, invalidator.userIDs, "只改 username 不应触发认证缓存失效")
 }
+
+func TestAdminService_UpdateUser_SuperAdminCanChangeAdminRole(t *testing.T) {
+	base := &userRepoStub{user: &User{ID: 42, Email: "u@example.com", Role: RoleUser, Status: StatusActive, Concurrency: 1}}
+	repo := &rpmUserRepoStub{userRepoStub: base}
+	invalidator := &authCacheInvalidatorStub{}
+	svc := &adminServiceImpl{
+		userRepo:             repo,
+		redeemCodeRepo:       &redeemRepoStub{},
+		authCacheInvalidator: invalidator,
+	}
+
+	updated, err := svc.UpdateUser(context.Background(), 42, &UpdateUserInput{
+		Role:          RoleAdmin,
+		RequesterRole: RoleSuperAdmin,
+	})
+	require.NoError(t, err)
+	require.Equal(t, RoleAdmin, updated.Role)
+	require.Equal(t, RoleAdmin, repo.lastUpdated.Role)
+	require.Equal(t, []int64{42}, invalidator.userIDs)
+}
+
+func TestAdminService_UpdateUser_AdminCannotChangeAdminRole(t *testing.T) {
+	base := &userRepoStub{user: &User{ID: 42, Email: "u@example.com", Role: RoleUser, Status: StatusActive, Concurrency: 1}}
+	repo := &rpmUserRepoStub{userRepoStub: base}
+	svc := &adminServiceImpl{userRepo: repo, redeemCodeRepo: &redeemRepoStub{}}
+
+	_, err := svc.UpdateUser(context.Background(), 42, &UpdateUserInput{
+		Role:          RoleAdmin,
+		RequesterRole: RoleAdmin,
+	})
+	require.ErrorIs(t, err, ErrInsufficientPerms)
+	require.Nil(t, repo.lastUpdated)
+}
+
+func TestAdminService_UpdateUser_CannotSetSuperAdminRole(t *testing.T) {
+	base := &userRepoStub{user: &User{ID: 42, Email: "u@example.com", Role: RoleUser, Status: StatusActive, Concurrency: 1}}
+	repo := &rpmUserRepoStub{userRepoStub: base}
+	svc := &adminServiceImpl{userRepo: repo, redeemCodeRepo: &redeemRepoStub{}}
+
+	_, err := svc.UpdateUser(context.Background(), 42, &UpdateUserInput{
+		Role:          RoleSuperAdmin,
+		RequesterRole: RoleSuperAdmin,
+	})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "invalid user role")
+	require.Nil(t, repo.lastUpdated)
+}
+
+func TestAdminService_UpdateUser_CannotChangeSuperAdminRole(t *testing.T) {
+	base := &userRepoStub{user: &User{ID: 42, Email: "u@example.com", Role: RoleSuperAdmin, Status: StatusActive, Concurrency: 1}}
+	repo := &rpmUserRepoStub{userRepoStub: base}
+	svc := &adminServiceImpl{userRepo: repo, redeemCodeRepo: &redeemRepoStub{}}
+
+	_, err := svc.UpdateUser(context.Background(), 42, &UpdateUserInput{
+		Role:          RoleUser,
+		RequesterRole: RoleSuperAdmin,
+	})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "cannot change super admin role")
+	require.Nil(t, repo.lastUpdated)
+}
+
+func TestAdminService_UpdateUser_CannotDisableSuperAdmin(t *testing.T) {
+	base := &userRepoStub{user: &User{ID: 42, Email: "u@example.com", Role: RoleSuperAdmin, Status: StatusActive, Concurrency: 1}}
+	repo := &rpmUserRepoStub{userRepoStub: base}
+	svc := &adminServiceImpl{userRepo: repo, redeemCodeRepo: &redeemRepoStub{}}
+
+	_, err := svc.UpdateUser(context.Background(), 42, &UpdateUserInput{
+		RequesterRole: RoleSuperAdmin,
+		Status:        StatusDisabled,
+	})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "cannot disable admin user")
+	require.Nil(t, repo.lastUpdated)
+}
+
+func TestAdminService_UpdateUser_AdminCannotEditSuperAdminSensitiveFields(t *testing.T) {
+	base := &userRepoStub{user: &User{ID: 42, Email: "root@example.com", Role: RoleSuperAdmin, Status: StatusActive, Concurrency: 1}}
+	repo := &rpmUserRepoStub{userRepoStub: base}
+	svc := &adminServiceImpl{userRepo: repo, redeemCodeRepo: &redeemRepoStub{}}
+
+	_, err := svc.UpdateUser(context.Background(), 42, &UpdateUserInput{
+		RequesterRole: RoleAdmin,
+		Email:         "changed@example.com",
+	})
+	require.ErrorIs(t, err, ErrInsufficientPerms)
+	require.Nil(t, repo.lastUpdated)
+}

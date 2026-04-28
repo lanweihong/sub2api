@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -113,7 +115,7 @@ func TestUserHandlerEndpoints(t *testing.T) {
 			"channel_subject": "openid-123",
 		},
 	}
-	body, _ := json.Marshal(bindBody)
+	body, _ = json.Marshal(bindBody)
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/1/auth-identities", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -164,7 +166,15 @@ func TestUserHandlerEndpoints(t *testing.T) {
 }
 
 func TestUserHandlerBindAuthIdentityMapsRequest(t *testing.T) {
-	router, adminSvc := setupAdminRouter()
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyUserRole), service.RoleAdmin)
+		c.Next()
+	})
+	adminSvc := newStubAdminService()
+	userHandler := NewUserHandler(adminSvc, nil)
+	router.POST("/api/v1/admin/users/:id/auth-identities", userHandler.BindAuthIdentity)
 
 	body, err := json.Marshal(map[string]any{
 		"provider_type":    "oidc",
@@ -186,6 +196,7 @@ func TestUserHandlerBindAuthIdentityMapsRequest(t *testing.T) {
 	require.Equal(t, "oidc", adminSvc.boundAuthIdentity.ProviderType)
 	require.Equal(t, "https://issuer.example", adminSvc.boundAuthIdentity.ProviderKey)
 	require.Equal(t, "subject-123", adminSvc.boundAuthIdentity.ProviderSubject)
+	require.Equal(t, service.RoleAdmin, adminSvc.boundAuthIdentity.RequesterRole)
 	require.Nil(t, adminSvc.boundAuthIdentity.Channel)
 	require.Equal(t, float64(12), adminSvc.boundAuthIdentity.Metadata["report_id"])
 }

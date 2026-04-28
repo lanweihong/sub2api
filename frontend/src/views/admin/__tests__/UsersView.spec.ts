@@ -9,13 +9,17 @@ const {
   getAllGroups,
   getBatchUsersUsage,
   listEnabledDefinitions,
-  getBatchUserAttributes
+  getBatchUserAttributes,
+  authStoreState
 } = vi.hoisted(() => ({
   listUsers: vi.fn(),
   getAllGroups: vi.fn(),
   getBatchUsersUsage: vi.fn(),
   listEnabledDefinitions: vi.fn(),
-  getBatchUserAttributes: vi.fn()
+  getBatchUserAttributes: vi.fn(),
+  authStoreState: {
+    isSuperAdmin: false
+  }
 }))
 
 vi.mock('@/api/admin', () => ({
@@ -45,6 +49,10 @@ vi.mock('@/stores/app', () => ({
   })
 }))
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => authStoreState
+}))
+
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
   return {
@@ -55,7 +63,7 @@ vi.mock('vue-i18n', async () => {
   }
 })
 
-const createAdminUser = (): AdminUser => ({
+const createAdminUser = (overrides: Partial<AdminUser> = {}): AdminUser => ({
   id: 42,
   username: 'scoped-user',
   email: 'scoped@example.com',
@@ -72,7 +80,8 @@ const createAdminUser = (): AdminUser => ({
   notes: '',
   last_active_at: '2026-04-16T02:00:00Z',
   last_used_at: '2026-04-17T02:00:00Z',
-  current_concurrency: 0
+  current_concurrency: 0,
+  ...overrides
 })
 
 const DataTableStub = {
@@ -82,8 +91,9 @@ const DataTableStub = {
     <div>
       <div data-test="columns">{{ columns.map(col => col.key).join(',') }}</div>
       <button data-test="sort-last-used" @click="$emit('sort', 'last_used_at', 'desc')">sort</button>
-      <div v-for="row in data" :key="row.id">
+      <div v-for="row in data" :key="row.id" :data-test="'row-' + row.id">
         <slot name="cell-last_used_at" :value="row.last_used_at" :row="row" />
+        <slot name="cell-actions" :row="row" />
       </div>
     </div>
   `
@@ -110,6 +120,7 @@ describe('admin UsersView', () => {
     getBatchUsersUsage.mockResolvedValue({ stats: {} })
     listEnabledDefinitions.mockResolvedValue([])
     getBatchUserAttributes.mockResolvedValue({ values: {} })
+    authStoreState.isSuperAdmin = false
   })
 
   it('shows active, used, and created activity columns in order and requests last_used_at sort', async () => {
@@ -160,5 +171,51 @@ describe('admin UsersView', () => {
       }),
       expect.any(Object)
     )
+  })
+
+  it('hides the edit action for super admin rows when the current user is not super admin', async () => {
+    listUsers.mockResolvedValue({
+      items: [
+        createAdminUser({ id: 1, role: 'super_admin', email: 'root@example.com' }),
+        createAdminUser({ id: 2, role: 'user', email: 'member@example.com' })
+      ],
+      total: 2,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    const wrapper = mount(UsersView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          EmptyState: true,
+          GroupBadge: true,
+          Select: true,
+          UserAttributesConfigModal: true,
+          UserConcurrencyCell: true,
+          UserCreateModal: true,
+          UserEditModal: true,
+          UserApiKeysModal: true,
+          UserAllowedGroupsModal: true,
+          UserBalanceModal: true,
+          UserBalanceHistoryModal: true,
+          GroupReplaceModal: true,
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="row-1"]').text()).not.toContain('common.edit')
+    expect(wrapper.get('[data-test="row-2"]').text()).toContain('common.edit')
   })
 })
