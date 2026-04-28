@@ -1058,6 +1058,7 @@ export default {
     linkedProfileSourcesDescription: '部分头像和昵称可能同步自第三方登录方式。',
     securityTitle: '安全设置',
     securityDescription: '密码、双因素认证和通知提醒集中放在右侧。',
+    superAdministrator: '超级管理员',
     administrator: '管理员',
     user: '用户',
     username: '用户名',
@@ -1788,6 +1789,7 @@ export default {
       failedToLoadApiKeys: '加载用户 API 密钥失败',
       deleteConfirm: "确定要删除用户 '{email}' 吗？此操作无法撤销。",
       roles: {
+        super_admin: '超级管理员',
         admin: '管理员',
         user: '用户'
       },

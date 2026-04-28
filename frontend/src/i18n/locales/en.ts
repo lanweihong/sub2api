@@ -1054,6 +1054,7 @@ export default {
     linkedProfileSourcesDescription: 'Some profile details may stay synced from third-party sign-in methods.',
     securityTitle: 'Security Settings',
     securityDescription: 'Password, two-factor authentication, and alerts live in the right rail.',
+    superAdministrator: 'Super Admin',
     administrator: 'Administrator',
     user: 'User',
     username: 'Username',
@@ -1666,6 +1667,7 @@ export default {
       creating: 'Creating...',
       updating: 'Updating...',
       form: {
+        roleLabel: 'Role',
         rpmLimit: 'Requests Per Minute (RPM)',
         rpmLimitPlaceholder: '0 = unlimited',
         rpmLimitHint: 'Max requests per minute for this user; 0 = unlimited. Acts as a fallback only when the group has no rpm_limit set.'
@@ -1834,6 +1836,7 @@ export default {
       createdAt: 'Created',
       totalRecharged: 'Total Recharged',
       roles: {
+        super_admin: 'Super Admin',
         admin: 'Admin',
         user: 'User'
       },
