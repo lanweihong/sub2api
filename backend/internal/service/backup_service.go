@@ -80,8 +80,8 @@ type BackupStorageConfig struct {
 	SecretAccessKey string                `json:"secret_access_key,omitempty"` //nolint:revive // field name follows AWS/cloud convention
 
 	// S3 专用字段
-	Endpoint       string `json:"endpoint,omitempty"`          // S3 自定义端点，如 https://<account_id>.r2.cloudflarestorage.com
-	Region         string `json:"region,omitempty"`            // S3 区域，R2 用 "auto"
+	Endpoint       string `json:"endpoint,omitempty"`         // S3 自定义端点，如 https://<account_id>.r2.cloudflarestorage.com
+	Region         string `json:"region,omitempty"`           // S3 区域，R2 用 "auto"
 	ForcePathStyle bool   `json:"force_path_style,omitempty"` // S3 路径风格
 
 	// 阿里云 OSS 专用字段

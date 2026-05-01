@@ -73,7 +73,7 @@ func (q *QiniuBackupStore) Upload(ctx context.Context, key string, body io.Reade
 
 	err = formUploader.Put(ctx, &ret, upToken, key, tmpFile, size, nil)
 	if err != nil {
-		return 0, fmt.Errorf("Qiniu Put: %w", err)
+		return 0, fmt.Errorf("qiniu put: %w", err)
 	}
 	return size, nil
 }
@@ -89,11 +89,11 @@ func (q *QiniuBackupStore) Download(ctx context.Context, key string) (io.ReadClo
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("Qiniu download: %w", err)
+		return nil, fmt.Errorf("qiniu download: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		_ = resp.Body.Close()
-		return nil, fmt.Errorf("Qiniu download failed: HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf("qiniu download failed: http status %d", resp.StatusCode)
 	}
 	return resp.Body, nil
 }
@@ -101,7 +101,7 @@ func (q *QiniuBackupStore) Download(ctx context.Context, key string) (io.ReadClo
 func (q *QiniuBackupStore) Delete(_ context.Context, key string) error {
 	err := q.bucketMgr.Delete(q.bucket, key)
 	if err != nil {
-		return fmt.Errorf("Qiniu Delete: %w", err)
+		return fmt.Errorf("qiniu delete: %w", err)
 	}
 	return nil
 }
@@ -115,7 +115,7 @@ func (q *QiniuBackupStore) PresignURL(_ context.Context, key string, expiry time
 func (q *QiniuBackupStore) HeadBucket(_ context.Context) error {
 	_, err := q.bucketMgr.GetBucketInfo(q.bucket)
 	if err != nil {
-		return fmt.Errorf("Qiniu GetBucketInfo failed: %w", err)
+		return fmt.Errorf("qiniu get bucket info failed: %w", err)
 	}
 	return nil
 }

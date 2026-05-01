@@ -6,13 +6,13 @@ import (
 
 func init() {
 	anthropiccompat.Register(&anthropiccompat.ProviderSpec{
-		Platform:       "anthropic-minimax",
-		DisplayName:    "MiniMax (Anthropic-compatible)",
-		DefaultBaseURL: "https://api.minimax.chat",
-		MessagesPath:   "/v1/messages",
-		AuthMode:       anthropiccompat.AuthModeAPIKey,
-		DefaultHeaders: map[string]string{},
-		SupportsStreaming:    true,
+		Platform:            "anthropic-minimax",
+		DisplayName:         "MiniMax (Anthropic-compatible)",
+		DefaultBaseURL:      "https://api.minimax.chat",
+		MessagesPath:        "/v1/messages",
+		AuthMode:            anthropiccompat.AuthModeAPIKey,
+		DefaultHeaders:      map[string]string{},
+		SupportsStreaming:   true,
 		SupportsTools:       true,
 		SupportsThinking:    false,
 		SupportsCountTokens: false,

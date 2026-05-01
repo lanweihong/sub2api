@@ -645,7 +645,6 @@ func (r *usageLogRepository) flushBestEffortBatch(db *sql.DB, batch []usageLogBe
 	}
 
 	groupsByKey := make(map[string]*bestEffortGroup, len(batch))
-	groupOrder := make([]*bestEffortGroup, 0, len(batch))
 	preparedByKey := make(map[string]usageLogInsertPrepared, len(batch))
 	uniqueOrder := make([]string, 0, len(batch))
 	fallback := make([]*bestEffortGroup, 0)
@@ -669,7 +668,6 @@ func (r *usageLogRepository) flushBestEffortBatch(db *sql.DB, batch []usageLogBe
 				key:      key,
 			}
 			groupsByKey[key] = group
-			groupOrder = append(groupOrder, group)
 			if prepared.requestID == "" {
 				fallback = append(fallback, group)
 			} else {

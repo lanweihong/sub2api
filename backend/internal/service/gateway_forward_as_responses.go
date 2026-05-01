@@ -403,9 +403,8 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 	var responseBuf *bytes.Buffer
 	var respTruncated bool
 	if captureMaxSize > 0 {
-		responseBuf = streamPayloadBufPool.Get().(*bytes.Buffer)
-		responseBuf.Reset()
-		defer streamPayloadBufPool.Put(responseBuf)
+		responseBuf = acquireStreamPayloadBuffer()
+		defer releaseStreamPayloadBuffer(responseBuf)
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -480,9 +479,9 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 				if remaining <= 0 {
 					respTruncated = true
 				} else if int64(len(sseBytes)) <= remaining {
-					responseBuf.Write(sseBytes)
+					_, _ = responseBuf.Write(sseBytes)
 				} else {
-					responseBuf.Write(sseBytes[:remaining])
+					_, _ = responseBuf.Write(sseBytes[:remaining])
 					respTruncated = true
 				}
 			}
@@ -508,9 +507,9 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 					if remaining <= 0 {
 						respTruncated = true
 					} else if int64(len(sseBytes)) <= remaining {
-						responseBuf.Write(sseBytes)
+						_, _ = responseBuf.Write(sseBytes)
 					} else {
-						responseBuf.Write(sseBytes[:remaining])
+						_, _ = responseBuf.Write(sseBytes[:remaining])
 						respTruncated = true
 					}
 				}

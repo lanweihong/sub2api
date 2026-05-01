@@ -109,6 +109,65 @@ func setPayloadLoggingSettingsForTest(t *testing.T, settings *PayloadLoggingSett
 	})
 }
 
+type gatewaySettingRepoStub struct {
+	values map[string]string
+}
+
+func (s *gatewaySettingRepoStub) Get(ctx context.Context, key string) (*Setting, error) {
+	if v, ok := s.values[key]; ok {
+		return &Setting{Key: key, Value: v}, nil
+	}
+	return nil, ErrSettingNotFound
+}
+
+func (s *gatewaySettingRepoStub) GetValue(ctx context.Context, key string) (string, error) {
+	if v, ok := s.values[key]; ok {
+		return v, nil
+	}
+	return "", ErrSettingNotFound
+}
+
+func (s *gatewaySettingRepoStub) Set(ctx context.Context, key, value string) error {
+	if s.values == nil {
+		s.values = make(map[string]string)
+	}
+	s.values[key] = value
+	return nil
+}
+
+func (s *gatewaySettingRepoStub) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
+	result := make(map[string]string, len(keys))
+	for _, key := range keys {
+		if v, ok := s.values[key]; ok {
+			result[key] = v
+		}
+	}
+	return result, nil
+}
+
+func (s *gatewaySettingRepoStub) SetMultiple(ctx context.Context, settings map[string]string) error {
+	if s.values == nil {
+		s.values = make(map[string]string)
+	}
+	for key, value := range settings {
+		s.values[key] = value
+	}
+	return nil
+}
+
+func (s *gatewaySettingRepoStub) GetAll(ctx context.Context) (map[string]string, error) {
+	result := make(map[string]string, len(s.values))
+	for key, value := range s.values {
+		result[key] = value
+	}
+	return result, nil
+}
+
+func (s *gatewaySettingRepoStub) Delete(ctx context.Context, key string) error {
+	delete(s.values, key)
+	return nil
+}
+
 type failWriteResponseWriter struct {
 	gin.ResponseWriter
 }
@@ -755,12 +814,14 @@ func TestGatewayService_AnthropicOAuth_ForwardPreservesBillingHeaderSystemBlock(
 					MaxLineSize: defaultMaxLineSize,
 				},
 			}
+			setPayloadLoggingSettingsForTest(t, DefaultPayloadLoggingSettings())
 			svc := &GatewayService{
 				cfg:                  cfg,
 				responseHeaderFilter: compileResponseHeaderFilter(cfg),
 				httpUpstream:         upstream,
 				rateLimitService:     &RateLimitService{},
 				deferredService:      &DeferredService{},
+				settingService:       NewSettingService(&gatewaySettingRepoStub{values: map[string]string{}}, cfg),
 			}
 
 			account := &Account{
@@ -1302,12 +1363,12 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_StreamingTimeoutAfterClientDi
 	go func() {
 		defer close(done)
 		_, _ = pw.Write([]byte(`data: {"type":"message_start","message":{"usage":{"input_tokens":9}}}` + "\n"))
-		// 保持上游连接静默，触发数据间隔超时分支。
-		time.Sleep(1500 * time.Millisecond)
-		_ = pw.Close()
+		// Keep the upstream connection open and silent so the interval timeout
+		// branch wins deterministically instead of racing with EOF.
 	}()
 
 	result, err := svc.handleStreamingResponseAnthropicAPIKeyPassthrough(context.Background(), resp, c, &Account{ID: 7}, time.Now(), "claude-3-7-sonnet-20250219", 0)
+	_ = pw.Close()
 	_ = pr.Close()
 	<-done
 

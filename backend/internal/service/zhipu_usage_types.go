@@ -79,14 +79,14 @@ type ZhipuToolUsageItem struct {
 // ZhipuToolUsageResponse 工具用量 API (/api/monitor/usage/tool-usage) 的实际 data 对象
 // 响应为时序格式，包含日期轴 x_time 和内置工具计数数组
 type ZhipuToolUsageResponse struct {
-	XTime              []string                `json:"x_time"`
-	ToolDataList       []ZhipuToolDataItem     `json:"toolDataList"`
-	ToolSummaryList    []ZhipuToolSummaryItem  `json:"toolSummaryList,omitempty"`
-	TotalUsage         *ZhipuToolTotalUsage    `json:"totalUsage,omitempty"`
-	Granularity        string                  `json:"granularity,omitempty"`
-	NetworkSearchCount []int64                 `json:"networkSearchCount,omitempty"`
-	WebReadMcpCount    []int64                 `json:"webReadMcpCount,omitempty"`
-	ZreadMcpCount      []int64                 `json:"zreadMcpCount,omitempty"`
+	XTime              []string               `json:"x_time"`
+	ToolDataList       []ZhipuToolDataItem    `json:"toolDataList"`
+	ToolSummaryList    []ZhipuToolSummaryItem `json:"toolSummaryList,omitempty"`
+	TotalUsage         *ZhipuToolTotalUsage   `json:"totalUsage,omitempty"`
+	Granularity        string                 `json:"granularity,omitempty"`
+	NetworkSearchCount []int64                `json:"networkSearchCount,omitempty"`
+	WebReadMcpCount    []int64                `json:"webReadMcpCount,omitempty"`
+	ZreadMcpCount      []int64                `json:"zreadMcpCount,omitempty"`
 }
 
 // ZhipuToolDataItem toolDataList 中的单个工具时序数据
@@ -130,17 +130,6 @@ type ZhipuMonthlyQuota struct {
 	UsageDetails []map[string]any `json:"usageDetails,omitempty"`
 }
 
-// zhipuRawAPIResponse 内部 HTTP 响应解析结构（unexported）
-// 智谱/Z.ai 监控接口统一响应格式：{"code": 200, "data": {...}}
-type zhipuRawAPIResponse struct {
-	Code    int             `json:"code"`
-	Message string          `json:"message,omitempty"`
-	Data    zhipuRawDataAny `json:"data"`
-}
-
-// zhipuRawDataAny 可以是对象也可以是数组，先用 json.RawMessage 延迟解析
-type zhipuRawDataAny = any
-
 // zhipuQuotaLimitData quota/limit 接口的 data 字段
 type zhipuQuotaLimitData struct {
 	Limits []zhipuQuotaLimitItem `json:"limits,omitempty"`
@@ -149,8 +138,8 @@ type zhipuQuotaLimitData struct {
 // zhipuQuotaLimitItem quota/limit 接口中 limits 数组的单项
 type zhipuQuotaLimitItem struct {
 	Type          string           `json:"type"`
-	Unit          int              `json:"unit"`          // 时间单位：3=小时, 5=月, 6=周
-	Number        int              `json:"number"`        // 数量：如 5 → 5 小时, 1 → 1 周
+	Unit          int              `json:"unit"`   // 时间单位：3=小时, 5=月, 6=周
+	Number        int              `json:"number"` // 数量：如 5 → 5 小时, 1 → 1 周
 	Percentage    float64          `json:"percentage"`
 	NextResetTime int64            `json:"nextResetTime"` // 重置时间（epoch 毫秒）
 	CurrentValue  any              `json:"currentValue,omitempty"`

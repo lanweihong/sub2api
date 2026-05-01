@@ -218,7 +218,7 @@ func RegisterGatewayRoutes(
 		antigravityV1Beta.POST("/models/*modelAction", h.Gateway.GeminiV1BetaModels)
 	}
 
-	}
+}
 
 // getGroupPlatform extracts the group platform from the API Key stored in context.
 func getGroupPlatform(c *gin.Context) string {

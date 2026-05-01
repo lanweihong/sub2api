@@ -4869,9 +4869,8 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 	var responseBuf *bytes.Buffer
 	var respTruncated bool
 	if captureMaxSize > 0 {
-		responseBuf = streamPayloadBufPool.Get().(*bytes.Buffer)
-		responseBuf.Reset()
-		defer streamPayloadBufPool.Put(responseBuf)
+		responseBuf = acquireStreamPayloadBuffer()
+		defer releaseStreamPayloadBuffer(responseBuf)
 	}
 
 	makeStreamResult := func(usage *ClaudeUsage, firstTokenMs *int, clientDisconnect bool) *streamingResult {
@@ -4902,10 +4901,10 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 			return
 		}
 		if int64(len(chunk)) <= remaining {
-			responseBuf.Write(chunk)
+			_, _ = responseBuf.Write(chunk)
 			return
 		}
-		responseBuf.Write(chunk[:remaining])
+		_, _ = responseBuf.Write(chunk[:remaining])
 		respTruncated = true
 	}
 
@@ -6671,9 +6670,8 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 	var responseBuf *bytes.Buffer
 	var respTruncated bool
 	if captureMaxSize > 0 {
-		responseBuf = streamPayloadBufPool.Get().(*bytes.Buffer)
-		responseBuf.Reset()
-		defer streamPayloadBufPool.Put(responseBuf)
+		responseBuf = acquireStreamPayloadBuffer()
+		defer releaseStreamPayloadBuffer(responseBuf)
 	}
 
 	// makeStreamResult 统一构造 streamingResult，自动填充报文审计数据
@@ -6999,9 +6997,9 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 						} else {
 							blockBytes := []byte(block)
 							if int64(len(blockBytes)) <= remaining {
-								responseBuf.Write(blockBytes)
+								_, _ = responseBuf.Write(blockBytes)
 							} else {
-								responseBuf.Write(blockBytes[:remaining])
+								_, _ = responseBuf.Write(blockBytes[:remaining])
 								respTruncated = true
 							}
 						}

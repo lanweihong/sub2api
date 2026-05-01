@@ -3039,9 +3039,8 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	var responseBuf *bytes.Buffer
 	var respTruncated bool
 	if captureMaxSize > 0 {
-		responseBuf = streamPayloadBufPool.Get().(*bytes.Buffer)
-		responseBuf.Reset()
-		defer streamPayloadBufPool.Put(responseBuf)
+		responseBuf = acquireStreamPayloadBuffer()
+		defer releaseStreamPayloadBuffer(responseBuf)
 	}
 
 	makeResult := func() *openaiStreamingResultPassthrough {
@@ -3092,10 +3091,10 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			if remaining <= 0 {
 				respTruncated = true
 			} else if int64(len(chunk)) > remaining {
-				responseBuf.Write(chunk[:remaining])
+				_, _ = responseBuf.Write(chunk[:remaining])
 				respTruncated = true
 			} else {
-				responseBuf.Write(chunk)
+				_, _ = responseBuf.Write(chunk)
 			}
 		}
 
@@ -3684,9 +3683,8 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 	// 报文审计：流式响应缓冲
 	var responseBuf *bytes.Buffer
 	if captureMaxSize > 0 {
-		responseBuf = streamPayloadBufPool.Get().(*bytes.Buffer)
-		responseBuf.Reset()
-		defer streamPayloadBufPool.Put(responseBuf)
+		responseBuf = acquireStreamPayloadBuffer()
+		defer releaseStreamPayloadBuffer(responseBuf)
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -3865,7 +3863,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				if int64(len(chunk)) > remaining {
 					chunk = chunk[:remaining]
 				}
-				responseBuf.Write(chunk)
+				_, _ = responseBuf.Write(chunk)
 			}
 
 			s.parseSSEUsageBytes(dataBytes, usage)

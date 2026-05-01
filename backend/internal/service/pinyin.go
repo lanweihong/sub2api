@@ -71,9 +71,9 @@ func convertNameToPinyin(name string) (string, error) {
 			if !ok || pinyin == "" {
 				return "", fmt.Errorf("no pinyin mapping for %q", r)
 			}
-			builder.WriteString(pinyin)
+			_, _ = builder.WriteString(pinyin)
 		case unicode.IsLetter(r) || unicode.IsDigit(r):
-			builder.WriteRune(unicode.ToLower(r))
+			_, _ = builder.WriteRune(unicode.ToLower(r))
 		case unicode.IsSpace(r):
 			continue
 		case isSkippableNameSeparator(r):

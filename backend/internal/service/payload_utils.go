@@ -8,9 +8,26 @@ import (
 
 // streamPayloadBufPool 流式响应采样缓冲池
 var streamPayloadBufPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return bytes.NewBuffer(make([]byte, 0, 32*1024))
 	},
+}
+
+func acquireStreamPayloadBuffer() *bytes.Buffer {
+	buf, ok := streamPayloadBufPool.Get().(*bytes.Buffer)
+	if !ok || buf == nil {
+		return bytes.NewBuffer(make([]byte, 0, 32*1024))
+	}
+	buf.Reset()
+	return buf
+}
+
+func releaseStreamPayloadBuffer(buf *bytes.Buffer) {
+	if buf == nil {
+		return
+	}
+	buf.Reset()
+	streamPayloadBufPool.Put(buf)
 }
 
 // TruncateBytesWithFlag 截断字节切片，确保不在 UTF-8 多字节字符中间截断

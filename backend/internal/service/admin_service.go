@@ -1977,7 +1977,6 @@ func (s *adminServiceImpl) AdminUpdateAPIKey(ctx context.Context, keyID int64, i
 		}
 	}
 
-	targetGroups := make([]*Group, 0, len(targetGroupIDs))
 	autoGrantGroups := make([]*Group, 0, len(targetGroupIDs))
 	for _, groupID := range targetGroupIDs {
 		group, err := s.groupRepo.GetByID(ctx, groupID)
@@ -1990,7 +1989,6 @@ func (s *adminServiceImpl) AdminUpdateAPIKey(ctx context.Context, keyID int64, i
 		if group.IsSubscriptionType() && s.userSubRepo == nil {
 			return nil, infraerrors.InternalServer("SUBSCRIPTION_REPOSITORY_UNAVAILABLE", "subscription repository is not configured")
 		}
-		targetGroups = append(targetGroups, group)
 		if group.IsExclusive && !group.IsSubscriptionType() {
 			autoGrantGroups = append(autoGrantGroups, group)
 		}

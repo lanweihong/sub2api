@@ -6,13 +6,13 @@ import (
 
 func init() {
 	anthropiccompat.Register(&anthropiccompat.ProviderSpec{
-		Platform:       "anthropic-kimi",
-		DisplayName:    "Kimi / Moonshot (Anthropic-compatible)",
-		DefaultBaseURL: "https://api.moonshot.cn",
-		MessagesPath:   "/v1/messages",
-		AuthMode:       anthropiccompat.AuthModeAPIKey,
-		DefaultHeaders: map[string]string{},
-		SupportsStreaming:    true,
+		Platform:            "anthropic-kimi",
+		DisplayName:         "Kimi / Moonshot (Anthropic-compatible)",
+		DefaultBaseURL:      "https://api.moonshot.cn",
+		MessagesPath:        "/v1/messages",
+		AuthMode:            anthropiccompat.AuthModeAPIKey,
+		DefaultHeaders:      map[string]string{},
+		SupportsStreaming:   true,
 		SupportsTools:       true,
 		SupportsThinking:    true,
 		SupportsCountTokens: false,
