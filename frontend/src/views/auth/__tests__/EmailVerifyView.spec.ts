@@ -112,6 +112,7 @@ describe('EmailVerifyView', () => {
     apiClientPostMock.mockReset()
     authStoreState.pendingAuthSession = null
     sessionStorage.clear()
+    localStorage.clear()
 
     getPublicSettingsMock.mockResolvedValue({
       turnstile_enabled: false,
@@ -136,6 +137,7 @@ describe('EmailVerifyView', () => {
       JSON.stringify({
         email: 'fresh@example.com',
         password: 'secret-123',
+        aff_code: 'AFF123',
       })
     )
 
@@ -177,6 +179,13 @@ describe('EmailVerifyView', () => {
       JSON.stringify({
         email: 'fresh@example.com',
         password: 'secret-123',
+      })
+    )
+    localStorage.setItem(
+      'affiliate_referral_code',
+      JSON.stringify({
+        code: 'AFF123',
+        expiresAt: Date.now() + 60_000,
       })
     )
 
@@ -305,6 +314,13 @@ describe('EmailVerifyView', () => {
         password: 'secret-123',
       })
     )
+    localStorage.setItem(
+      'affiliate_referral_code',
+      JSON.stringify({
+        code: 'AFF123',
+        expiresAt: Date.now() + 60_000,
+      })
+    )
     apiClientPostMock.mockResolvedValue({
       data: {
         access_token: 'oauth-access-token',
@@ -330,11 +346,15 @@ describe('EmailVerifyView', () => {
     await wrapper.get('form').trigger('submit.prevent')
     await flushPromises()
 
-    expect(apiClientPostMock).toHaveBeenCalledWith('/auth/oauth/pending/create-account', {
-      email: 'fresh@example.com',
-      password: 'secret-123',
-      verify_code: '123456',
-    })
+    expect(apiClientPostMock).toHaveBeenCalledWith(
+      '/auth/oauth/pending/create-account',
+      expect.objectContaining({
+        email: 'fresh@example.com',
+        password: 'secret-123',
+        verify_code: '123456',
+        aff_code: 'AFF123',
+      })
+    )
     expect(persistOAuthTokenContextMock).toHaveBeenCalledWith({
       access_token: 'oauth-access-token',
       refresh_token: 'oauth-refresh-token',
