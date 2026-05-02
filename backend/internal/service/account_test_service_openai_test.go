@@ -12,8 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 )
@@ -297,4 +299,84 @@ func TestAccountTestService_OpenAI401SetsPermanentErrorOnly(t *testing.T) {
 	require.Zero(t, repo.rateLimitedID)
 	require.Zero(t, repo.clearedErrorID)
 	require.Nil(t, account.RateLimitResetAt)
+}
+
+func TestAccountTestService_OpenAIAPIKeyCCDirectUsesChatCompletions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, recorder := newTestContext()
+
+	resp := newJSONResponse(http.StatusOK, "")
+	resp.Header.Set("Content-Type", "text/event-stream")
+	resp.Body = io.NopCloser(strings.NewReader(`data: {"id":"chunk","object":"chat.completion.chunk","choices":[{"delta":{"content":"ok"}}]}
+
+data: [DONE]
+
+`))
+
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+	svc := &AccountTestService{
+		cfg:          &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}}},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          81,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":       "sk-test",
+			"base_url":      "https://upstream.example/v1",
+			"model_mapping": map[string]any{"client-model": "upstream-model"},
+		},
+		Extra: map[string]any{"openai_cc_direct_forward": true},
+	}
+
+	err := svc.testOpenAIAccountConnection(ctx, account, "client-model", "", "")
+	require.NoError(t, err)
+	require.Len(t, upstream.requests, 1)
+	require.Equal(t, "https://upstream.example/v1/chat/completions", upstream.requests[0].URL.String())
+	require.Equal(t, "Bearer sk-test", upstream.requests[0].Header.Get("Authorization"))
+	require.Equal(t, "text/event-stream", upstream.requests[0].Header.Get("Accept"))
+
+	reqBody, err := io.ReadAll(upstream.requests[0].Body)
+	require.NoError(t, err)
+	require.Equal(t, "upstream-model", gjson.GetBytes(reqBody, "model").String())
+	require.True(t, gjson.GetBytes(reqBody, "stream").Bool())
+	require.Equal(t, "hi", gjson.GetBytes(reqBody, "messages.0.content").String())
+	require.Contains(t, recorder.Body.String(), `"text":"ok"`)
+	require.Contains(t, recorder.Body.String(), `"success":true`)
+}
+
+func TestAccountTestService_OpenAIAPIKeyCCDirectStreamTooLongFails(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, recorder := newTestContext()
+
+	resp := newJSONResponse(http.StatusOK, "")
+	resp.Header.Set("Content-Type", "text/event-stream")
+	resp.Body = io.NopCloser(strings.NewReader("data: " + strings.Repeat("x", 128) + "\n\n"))
+
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+	svc := &AccountTestService{
+		cfg: &config.Config{
+			Gateway:  config.GatewayConfig{MaxLineSize: 32},
+			Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}},
+		},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          82,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-test",
+			"base_url": "https://upstream.example/v1",
+		},
+		Extra: map[string]any{"openai_cc_direct_forward": true},
+	}
+
+	err := svc.testOpenAIAccountConnection(ctx, account, "gpt-5", "", "")
+	require.Error(t, err)
+	require.Contains(t, recorder.Body.String(), "Stream read error")
+	require.NotContains(t, recorder.Body.String(), `"success":true`)
 }

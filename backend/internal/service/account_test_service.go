@@ -535,6 +535,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	var apiURL string
 	var isOAuth bool
 	var chatgptAccountID string
+	useChatCompletionsDirect := false
 
 	if account.IsOAuth() {
 		isOAuth = true
@@ -562,7 +563,12 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		if err != nil {
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Invalid base URL: %s", err.Error()))
 		}
-		apiURL = strings.TrimSuffix(normalizedBaseURL, "/") + "/responses"
+		useChatCompletionsDirect = account.IsOpenAICCForwardEnabled()
+		if useChatCompletionsDirect {
+			apiURL = buildOpenAIChatCompletionsURL(normalizedBaseURL)
+		} else {
+			apiURL = buildOpenAIResponsesURL(normalizedBaseURL)
+		}
 	} else {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Unsupported account type: %s", account.Type))
 	}
@@ -574,8 +580,15 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	c.Writer.Header().Set("X-Accel-Buffering", "no")
 	c.Writer.Flush()
 
-	// Create OpenAI Responses API payload
-	payload := createOpenAITestPayload(testModelID, isOAuth)
+	// Create OpenAI test payload. API Key accounts with Chat Completions direct
+	// forward enabled should be tested against the same upstream API shape used
+	// by the gateway's normal /v1/chat/completions path.
+	var payload map[string]any
+	if useChatCompletionsDirect {
+		payload = createOpenAIChatCompletionsTestPayload(testModelID)
+	} else {
+		payload = createOpenAITestPayload(testModelID, isOAuth)
+	}
 	payloadBytes, _ := json.Marshal(payload)
 
 	// Send test_start event
@@ -589,6 +602,9 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	// Set common headers
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+authToken)
+	if useChatCompletionsDirect {
+		req.Header.Set("Accept", "text/event-stream")
+	}
 
 	// Set OAuth-specific headers for ChatGPT internal API
 	if isOAuth {
@@ -631,7 +647,11 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body)))
 	}
 
-	// Process SSE stream
+	if useChatCompletionsDirect {
+		return s.processOpenAIChatCompletionsTestResponse(c, resp)
+	}
+
+	// Process Responses SSE stream
 	return s.processOpenAIStream(c, resp.Body)
 }
 
@@ -1193,6 +1213,22 @@ func createOpenAITestPayload(modelID string, isOAuth bool) map[string]any {
 	return payload
 }
 
+// createOpenAIChatCompletionsTestPayload creates a minimal streaming Chat
+// Completions payload for OpenAI-compatible upstreams that do not support the
+// Responses API.
+func createOpenAIChatCompletionsTestPayload(modelID string) map[string]any {
+	return map[string]any{
+		"model": modelID,
+		"messages": []map[string]any{
+			{
+				"role":    "user",
+				"content": "hi",
+			},
+		},
+		"stream": true,
+	}
+}
+
 // processClaudeStream processes the SSE stream from Claude API
 func (s *AccountTestService) processClaudeStream(c *gin.Context, body io.Reader) error {
 	reader := bufio.NewReader(body)
@@ -1249,23 +1285,11 @@ func (s *AccountTestService) processClaudeStream(c *gin.Context, body io.Reader)
 
 // processOpenAIStream processes the SSE stream from OpenAI Responses API
 func (s *AccountTestService) processOpenAIStream(c *gin.Context, body io.Reader) error {
-	reader := bufio.NewReader(body)
+	scanner := s.newOpenAIAccountTestSSEScanner(body)
 	seenCompleted := false
 
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				if seenCompleted {
-					s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-					return nil
-				}
-				return s.sendErrorAndEnd(c, "Stream ended before response.completed")
-			}
-			return s.sendErrorAndEnd(c, fmt.Sprintf("Stream read error: %s", err.Error()))
-		}
-
-		line = strings.TrimSpace(line)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
 		if line == "" || !sseDataPrefix.MatchString(line) {
 			continue
 		}
@@ -1315,6 +1339,126 @@ func (s *AccountTestService) processOpenAIStream(c *gin.Context, body io.Reader)
 			return s.sendErrorAndEnd(c, errorMsg)
 		}
 	}
+
+	if err := scanner.Err(); err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Stream read error: %s", err.Error()))
+	}
+	if seenCompleted {
+		s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+		return nil
+	}
+	return s.sendErrorAndEnd(c, "Stream ended before response.completed")
+}
+
+func (s *AccountTestService) processOpenAIChatCompletionsTestResponse(c *gin.Context, resp *http.Response) error {
+	if resp == nil || resp.Body == nil {
+		return s.sendErrorAndEnd(c, "Empty upstream response")
+	}
+	if !isEventStreamResponse(resp.Header) {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to read response: %s", err.Error()))
+		}
+		return s.processOpenAIChatCompletionsJSON(c, body)
+	}
+	return s.processOpenAIChatCompletionsStream(c, resp.Body)
+}
+
+func (s *AccountTestService) processOpenAIChatCompletionsJSON(c *gin.Context, body []byte) error {
+	var data map[string]any
+	if err := json.Unmarshal(body, &data); err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to parse response: %s", err.Error()))
+	}
+	if errData, ok := data["error"].(map[string]any); ok {
+		if msg, ok := errData["message"].(string); ok && strings.TrimSpace(msg) != "" {
+			return s.sendErrorAndEnd(c, msg)
+		}
+		return s.sendErrorAndEnd(c, "OpenAI Chat Completions response failed")
+	}
+	if choices, ok := data["choices"].([]any); ok && len(choices) > 0 {
+		if choice, ok := choices[0].(map[string]any); ok {
+			if message, ok := choice["message"].(map[string]any); ok {
+				if content, ok := message["content"].(string); ok && content != "" {
+					s.sendEvent(c, TestEvent{Type: "content", Text: content})
+				}
+			}
+		}
+		s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+		return nil
+	}
+	return s.sendErrorAndEnd(c, "OpenAI Chat Completions response missing choices")
+}
+
+func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, body io.Reader) error {
+	scanner := s.newOpenAIAccountTestSSEScanner(body)
+	seenTerminal := false
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || !sseDataPrefix.MatchString(line) {
+			continue
+		}
+
+		jsonStr := sseDataPrefix.ReplaceAllString(line, "")
+		if jsonStr == "[DONE]" {
+			s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+			return nil
+		}
+
+		var data map[string]any
+		if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
+			continue
+		}
+		if errData, ok := data["error"].(map[string]any); ok {
+			errorMsg := "OpenAI Chat Completions response failed"
+			if msg, ok := errData["message"].(string); ok && msg != "" {
+				errorMsg = msg
+			}
+			return s.sendErrorAndEnd(c, errorMsg)
+		}
+
+		choices, ok := data["choices"].([]any)
+		if !ok {
+			continue
+		}
+		for _, rawChoice := range choices {
+			choice, ok := rawChoice.(map[string]any)
+			if !ok {
+				continue
+			}
+			if delta, ok := choice["delta"].(map[string]any); ok {
+				if content, ok := delta["content"].(string); ok && content != "" {
+					s.sendEvent(c, TestEvent{Type: "content", Text: content})
+				}
+			}
+			if finishReason, ok := choice["finish_reason"].(string); ok && finishReason != "" {
+				seenTerminal = true
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Stream read error: %s", err.Error()))
+	}
+	if seenTerminal {
+		s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+		return nil
+	}
+	return s.sendErrorAndEnd(c, "Stream ended before Chat Completions terminal event")
+}
+
+func (s *AccountTestService) newOpenAIAccountTestSSEScanner(body io.Reader) *bufio.Scanner {
+	maxLineSize := defaultMaxLineSize
+	if s != nil && s.cfg != nil && s.cfg.Gateway.MaxLineSize > 0 {
+		maxLineSize = s.cfg.Gateway.MaxLineSize
+	}
+	initialSize := 64 * 1024
+	if maxLineSize > 0 && maxLineSize < initialSize {
+		initialSize = maxLineSize
+	}
+	scanner := bufio.NewScanner(body)
+	scanner.Buffer(make([]byte, 0, initialSize), maxLineSize)
+	return scanner
 }
 
 // testOpenAIImageAPIKey tests OpenAI image generation using an API Key account.
