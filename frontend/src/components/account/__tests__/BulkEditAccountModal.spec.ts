@@ -236,6 +236,52 @@ describe('BulkEditAccountModal', () => {
     })
   })
 
+  it('OpenAI API Key 批量编辑可开启 Chat Completions 直通转发', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['apikey']
+    })
+
+    await wrapper.get('#bulk-edit-openai-cc-direct-forward-enabled').setValue(true)
+    await wrapper.get('#bulk-edit-openai-cc-direct-forward-toggle').trigger('click')
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      extra: {
+        openai_cc_direct_forward: true
+      }
+    })
+  })
+
+  it('OpenAI API Key 批量编辑可关闭 Chat Completions 直通转发', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['apikey']
+    })
+
+    await wrapper.get('#bulk-edit-openai-cc-direct-forward-enabled').setValue(true)
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      extra: {
+        openai_cc_direct_forward: false
+      }
+    })
+  })
+
+  it('OpenAI OAuth 批量编辑不显示 Chat Completions 直通转发入口', () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['oauth']
+    })
+
+    expect(wrapper.find('#bulk-edit-openai-cc-direct-forward-enabled').exists()).toBe(false)
+  })
+
   it('开启 OpenAI 自动透传时不再同时提交模型限制', async () => {
     const wrapper = mountModal({
       selectedPlatforms: ['openai'],
