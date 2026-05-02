@@ -1138,6 +1138,21 @@ func (a *Account) IsOpenAIPassthroughEnabled() bool {
 	return false
 }
 
+// IsOpenAICCForwardEnabled 返回 OpenAI API Key 账号是否启用 Chat Completions 直通转发。
+//
+// 启用后，/v1/chat/completions 请求将跳过 Responses API 转换，直接转发到
+// 上游 /v1/chat/completions。该模式仅适用于 API Key 账号的 OpenAI-compatible
+// 上游；OAuth 账号仍必须走 ChatGPT internal Responses API 链路。
+func (a *Account) IsOpenAICCForwardEnabled() bool {
+	if a == nil || !a.IsOpenAIApiKey() || a.Extra == nil {
+		return false
+	}
+	if enabled, ok := a.Extra["openai_cc_direct_forward"].(bool); ok {
+		return enabled
+	}
+	return false
+}
+
 // IsOpenAIResponsesWebSocketV2Enabled 返回 OpenAI 账号是否开启 Responses WebSocket v2。
 //
 // 分类型新字段：

@@ -49,6 +49,88 @@ func TestAccount_IsOpenAIPassthroughEnabled(t *testing.T) {
 	})
 }
 
+func TestAccount_IsOpenAICCForwardEnabled(t *testing.T) {
+	tests := []struct {
+		name    string
+		account *Account
+		want    bool
+	}{
+		{
+			name: "OpenAI API Key 开启",
+			account: &Account{
+				Platform: PlatformOpenAI,
+				Type:     AccountTypeAPIKey,
+				Extra:    map[string]any{"openai_cc_direct_forward": true},
+			},
+			want: true,
+		},
+		{
+			name: "OpenAI API Key 关闭",
+			account: &Account{
+				Platform: PlatformOpenAI,
+				Type:     AccountTypeAPIKey,
+				Extra:    map[string]any{"openai_cc_direct_forward": false},
+			},
+			want: false,
+		},
+		{
+			name: "字段缺失",
+			account: &Account{
+				Platform: PlatformOpenAI,
+				Type:     AccountTypeAPIKey,
+				Extra:    map[string]any{},
+			},
+			want: false,
+		},
+		{
+			name: "nil Extra",
+			account: &Account{
+				Platform: PlatformOpenAI,
+				Type:     AccountTypeAPIKey,
+			},
+			want: false,
+		},
+		{
+			name: "非 OpenAI 平台",
+			account: &Account{
+				Platform: PlatformAnthropic,
+				Type:     AccountTypeAPIKey,
+				Extra:    map[string]any{"openai_cc_direct_forward": true},
+			},
+			want: false,
+		},
+		{
+			name: "OpenAI OAuth 不启用",
+			account: &Account{
+				Platform: PlatformOpenAI,
+				Type:     AccountTypeOAuth,
+				Extra:    map[string]any{"openai_cc_direct_forward": true},
+			},
+			want: false,
+		},
+		{
+			name: "类型错误",
+			account: &Account{
+				Platform: PlatformOpenAI,
+				Type:     AccountTypeAPIKey,
+				Extra:    map[string]any{"openai_cc_direct_forward": "true"},
+			},
+			want: false,
+		},
+		{
+			name:    "nil account",
+			account: nil,
+			want:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, tt.account.IsOpenAICCForwardEnabled())
+		})
+	}
+}
+
 func TestAccount_IsOpenAIOAuthPassthroughEnabled(t *testing.T) {
 	t.Run("仅OAuth类型允许返回开启", func(t *testing.T) {
 		oauthAccount := &Account{
