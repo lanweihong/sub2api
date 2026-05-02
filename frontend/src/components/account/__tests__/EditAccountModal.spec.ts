@@ -239,4 +239,52 @@ describe('EditAccountModal', () => {
       'gpt-5.4': 'gpt-5.4-openai-compact'
     })
   })
+
+  it('submits OpenAI Chat Completions direct forward for API key accounts', async () => {
+    const account = buildAccount()
+    account.extra = {
+      openai_cc_direct_forward: true
+    }
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.openai_cc_direct_forward).toBe(true)
+  })
+
+  it('removes OpenAI Chat Completions direct forward when toggled off', async () => {
+    const account = buildAccount()
+    account.extra = {
+      openai_cc_direct_forward: true
+    }
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.get('[data-testid="openai-cc-direct-forward-toggle"]').trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).not.toHaveProperty('openai_cc_direct_forward')
+  })
+
+  it('does not show OpenAI Chat Completions direct forward for OAuth accounts', () => {
+    const account = buildAccount()
+    account.type = 'oauth'
+    account.credentials = {
+      access_token: 'token',
+      refresh_token: 'refresh'
+    }
+
+    const wrapper = mountModal(account)
+
+    expect(wrapper.find('[data-testid="openai-cc-direct-forward-toggle"]').exists()).toBe(false)
+  })
 })
