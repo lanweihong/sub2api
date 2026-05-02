@@ -68,10 +68,13 @@ func (q *QiniuBackupStore) Upload(ctx context.Context, key string, body io.Reade
 	cfg := storage.Config{
 		Region: q.region,
 	}
-	formUploader := storage.NewFormUploader(&cfg)
+	resumeUploader := storage.NewResumeUploaderV2(&cfg)
 	ret := storage.PutRet{}
+	putExtra := storage.RputV2Extra{
+		PartSize: 8 * 1024 * 1024,
+	}
 
-	err = formUploader.Put(ctx, &ret, upToken, key, tmpFile, size, nil)
+	err = resumeUploader.Put(ctx, &ret, upToken, key, tmpFile, size, &putExtra)
 	if err != nil {
 		return 0, fmt.Errorf("qiniu put: %w", err)
 	}
