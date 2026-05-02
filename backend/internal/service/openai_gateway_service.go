@@ -38,9 +38,12 @@ const (
 	// ChatGPT internal API for OAuth accounts
 	chatgptCodexURL = "https://chatgpt.com/backend-api/codex/responses"
 	// OpenAI Platform API for API Key accounts (fallback)
-	openaiPlatformAPIURL   = "https://api.openai.com/v1/responses"
-	openaiStickySessionTTL = time.Hour // 粘性会话TTL
-	codexCLIUserAgent      = "codex_cli_rs/0.125.0"
+	openaiPlatformAPIURL                  = "https://api.openai.com/v1/responses"
+	openAIPlatformChatCompletionsURL      = "https://api.openai.com/v1/chat/completions"
+	OpenAIUpstreamEndpointOverrideKey     = "openai_upstream_endpoint_override"
+	OpenAIUpstreamEndpointChatCompletions = "/v1/chat/completions"
+	openaiStickySessionTTL                = time.Hour // 粘性会话TTL
+	codexCLIUserAgent                     = "codex_cli_rs/0.125.0"
 	// codex_cli_only 拒绝时单个请求头日志长度上限（字符）
 	codexCLIOnlyHeaderValueMaxBytes = 256
 
@@ -84,6 +87,13 @@ var openaiPassthroughAllowedHeaders = map[string]bool{
 	"session_id":            true,
 	"x-codex-turn-state":    true,
 	"x-codex-turn-metadata": true,
+}
+
+var openaiChatCompletionsDirectAllowedHeaders = map[string]bool{
+	"accept":          true,
+	"accept-language": true,
+	"content-type":    true,
+	"user-agent":      true,
 }
 
 // codex_cli_only 拒绝时记录的请求头白名单（仅用于诊断日志，不参与上游透传）
@@ -2707,8 +2717,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 		// 报文审计：获取配置
 		var captureMaxSize int64
-		if payloadCfg, _ := s.settingService.GetPayloadLoggingSettings(ctx); payloadCfg != nil && payloadCfg.Enabled {
-			captureMaxSize = payloadCfg.MaxResponseSize
+		if s.settingService != nil {
+			if payloadCfg, _ := s.settingService.GetPayloadLoggingSettings(ctx); payloadCfg != nil && payloadCfg.Enabled {
+				captureMaxSize = payloadCfg.MaxResponseSize
+			}
 		}
 
 		if reqStream {
@@ -2934,8 +2946,10 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 
 	// 报文审计：获取配置
 	var ptCaptureMaxSize int64
-	if payloadCfg, _ := s.settingService.GetPayloadLoggingSettings(ctx); payloadCfg != nil && payloadCfg.Enabled {
-		ptCaptureMaxSize = payloadCfg.MaxResponseSize
+	if s.settingService != nil {
+		if payloadCfg, _ := s.settingService.GetPayloadLoggingSettings(ctx); payloadCfg != nil && payloadCfg.Enabled {
+			ptCaptureMaxSize = payloadCfg.MaxResponseSize
+		}
 	}
 
 	if reqStream {
@@ -3335,6 +3349,17 @@ func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool 
 	return true
 }
 
+func openAIStreamTopLevelErrorMessage(payload []byte) (string, bool) {
+	if len(payload) == 0 {
+		return "", false
+	}
+	errNode := gjson.GetBytes(payload, "error")
+	if !errNode.Exists() || !errNode.IsObject() {
+		return "", false
+	}
+	return extractOpenAISSEErrorMessage(payload), true
+}
+
 func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 	c *gin.Context,
 	account *Account,
@@ -3484,6 +3509,13 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			eventType := strings.TrimSpace(gjson.Get(trimmedData, "type").String())
 			if eventType == "response.failed" {
 				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
+				if !openAIStreamClientOutputStarted(c, clientOutputStarted) && openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
+					return makeResult(), s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage)
+				}
+				forceFlushFailedEvent = true
+				sawFailedEvent = true
+			} else if errMessage, ok := openAIStreamTopLevelErrorMessage(dataBytes); ok {
+				failedMessage = errMessage
 				if !openAIStreamClientOutputStarted(c, clientOutputStarted) && openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
 					return makeResult(), s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage)
 				}
@@ -4572,12 +4604,24 @@ func (s *OpenAIGatewayService) parseSSEUsageBytes(data []byte, usage *OpenAIUsag
 		return
 	}
 	// 选择性解析：仅在数据中包含终止事件标识时才进入字段提取。
-	if len(data) < 72 {
+	if len(data) < 72 && !bytes.Contains(data, []byte(`"usage"`)) {
 		return
 	}
 	eventType := gjson.GetBytes(data, "type").String()
 	if eventType != "response.completed" && eventType != "response.done" &&
 		eventType != "response.incomplete" && eventType != "response.cancelled" && eventType != "response.canceled" {
+		if usageNode := gjson.GetBytes(data, "usage"); usageNode.Exists() && usageNode.IsObject() {
+			// Chat Completions stream usage arrives on a chunk with top-level
+			// usage.prompt_tokens/completion_tokens rather than a Responses terminal event.
+			inputTokens := gjson.GetBytes(data, "usage.prompt_tokens")
+			outputTokens := gjson.GetBytes(data, "usage.completion_tokens")
+			cacheReadTokens := gjson.GetBytes(data, "usage.prompt_tokens_details.cached_tokens")
+			if inputTokens.Exists() || outputTokens.Exists() || cacheReadTokens.Exists() {
+				usage.InputTokens = int(inputTokens.Int())
+				usage.OutputTokens = int(outputTokens.Int())
+				usage.CacheReadInputTokens = int(cacheReadTokens.Int())
+			}
+		}
 		return
 	}
 
@@ -4597,11 +4641,26 @@ func extractOpenAIUsageFromJSONBytes(body []byte) (OpenAIUsage, bool) {
 		"usage.output_tokens",
 		"usage.input_tokens_details.cached_tokens",
 		"usage.output_tokens_details.image_tokens",
+		"usage.prompt_tokens",
+		"usage.completion_tokens",
+		"usage.prompt_tokens_details.cached_tokens",
 	)
+	inputTokens := values[0]
+	if !inputTokens.Exists() {
+		inputTokens = values[4]
+	}
+	outputTokens := values[1]
+	if !outputTokens.Exists() {
+		outputTokens = values[5]
+	}
+	cacheReadTokens := values[2]
+	if !cacheReadTokens.Exists() {
+		cacheReadTokens = values[6]
+	}
 	return OpenAIUsage{
-		InputTokens:          int(values[0].Int()),
-		OutputTokens:         int(values[1].Int()),
-		CacheReadInputTokens: int(values[2].Int()),
+		InputTokens:          int(inputTokens.Int()),
+		OutputTokens:         int(outputTokens.Int()),
+		CacheReadInputTokens: int(cacheReadTokens.Int()),
 		ImageOutputTokens:    int(values[3].Int()),
 	}, true
 }
@@ -4911,6 +4970,27 @@ func buildOpenAIResponsesURL(base string) string {
 		return normalized + "/responses"
 	}
 	return normalized + "/v1/responses"
+}
+
+// buildOpenAIChatCompletionsURL 组装 OpenAI Chat Completions 端点。
+func buildOpenAIChatCompletionsURL(base string) string {
+	normalized := strings.TrimRight(strings.TrimSpace(base), "/")
+	if normalized == "" {
+		return openAIPlatformChatCompletionsURL
+	}
+	if strings.HasSuffix(normalized, "/chat/completions") {
+		return normalized
+	}
+	if strings.HasSuffix(normalized, "/v1/responses") {
+		return strings.TrimSuffix(normalized, "/responses") + "/chat/completions"
+	}
+	if strings.HasSuffix(normalized, "/responses") {
+		return strings.TrimSuffix(normalized, "/responses") + "/chat/completions"
+	}
+	if strings.HasSuffix(normalized, "/v1") {
+		return normalized + "/chat/completions"
+	}
+	return normalized + "/v1/chat/completions"
 }
 
 func trimOpenAIEncryptedReasoningItems(reqBody map[string]any) bool {
