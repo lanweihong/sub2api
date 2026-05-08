@@ -62,6 +62,20 @@
               />
             </div>
 
+            <!-- Department Filter (visible when enabled) -->
+            <div v-if="visibleFilters.has('department')" class="w-full sm:w-44">
+              <Select
+                v-model="filters.department"
+                :options="departmentFilterOptions"
+                searchable
+                :search-placeholder="t('admin.users.searchDepartments')"
+                @change="applyFilter"
+              />
+              <p v-if="filters.department" class="mt-1 text-xs text-gray-500">
+                {{ t('admin.users.departmentFilterIncludesChildren') }}
+              </p>
+            </div>
+
             <!-- Dynamic Attribute Filters -->
             <template v-for="(value, attrId) in activeAttributeFilters" :key="attrId">
               <div
@@ -637,7 +651,7 @@ import Icon from '@/components/icons/Icon.vue'
 
 const { t } = useI18n()
 import { adminAPI } from '@/api/admin'
-import type { AdminUser, AdminGroup, UserAttributeDefinition } from '@/types'
+import type { AdminUser, AdminGroup, Department, UserAttributeDefinition } from '@/types'
 import type { BatchUserUsageStats } from '@/api/admin/dashboard'
 import type { Column } from '@/components/common/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -851,6 +865,28 @@ const loadAllGroups = async () => {
     console.error('Failed to load groups:', e)
   }
 }
+
+// Departments data for the department filter
+const allDepartments = ref<Department[]>([])
+const loadAllDepartments = async () => {
+  if (allDepartments.value.length > 0) return
+  try {
+    allDepartments.value = await adminAPI.departments.list()
+  } catch (e) {
+    console.error('Failed to load departments:', e)
+  }
+}
+const departmentFilterOptions = computed(() => {
+  const options: { value: string; label: string }[] = [
+    { value: '', label: t('admin.users.allDepartments') }
+  ]
+  for (const dept of allDepartments.value) {
+    if (dept.status === 'active') {
+      options.push({ value: String(dept.id), label: dept.name })
+    }
+  }
+  return options
+})
 // Resolve user's accessible groups: exclusive groups first, then public groups
 const getUserGroups = (user: AdminUser) => {
   const exclusive: AdminGroup[] = []
@@ -884,7 +920,8 @@ const groupFilterOptions = computed(() => {
 const filters = reactive({
   role: '',
   status: '',
-  group: ''  // group name for fuzzy match, '' = all
+  group: '',  // group name for fuzzy match, '' = all
+  department: ''  // department id as string, '' = all
 })
 const activeAttributeFilters = reactive<Record<number, string>>({})
 
@@ -913,7 +950,8 @@ const filterableAttributes = computed(() =>
 const builtInFilters = computed(() => [
   { key: 'role', name: t('admin.users.columns.role'), type: 'select' as const },
   { key: 'status', name: t('admin.users.columns.status'), type: 'select' as const },
-  { key: 'group', name: t('admin.users.columns.groups'), type: 'select' as const }
+  { key: 'group', name: t('admin.users.columns.groups'), type: 'select' as const },
+  { key: 'department', name: t('admin.users.columns.department'), type: 'select' as const }
 ])
 
 // Load saved filters from localStorage
@@ -932,6 +970,7 @@ const loadSavedFilters = () => {
       if (parsed.role) filters.role = parsed.role
       if (parsed.status) filters.status = parsed.status
       if (parsed.group) filters.group = parsed.group
+      if (parsed.department) filters.department = parsed.department
       if (parsed.attributes) {
         Object.assign(activeAttributeFilters, parsed.attributes)
       }
@@ -951,6 +990,7 @@ const saveFiltersToStorage = () => {
       role: filters.role,
       status: filters.status,
       group: filters.group,
+      department: filters.department,
       attributes: activeAttributeFilters
     }
     localStorage.setItem(FILTER_VALUES_KEY, JSON.stringify(values))
@@ -1191,6 +1231,7 @@ const loadUsers = async () => {
         status: filters.status as any,
         search: searchQuery.value || undefined,
         group_name: filters.group || undefined,
+        department_id: filters.department ? Number(filters.department) : undefined,
         attributes: Object.keys(attrFilters).length > 0 ? attrFilters : undefined,
         include_subscriptions: hasVisibleSubscriptionsColumn.value,
         sort_by: sortState.sort_by,
@@ -1273,9 +1314,11 @@ const toggleBuiltInFilter = (key: string) => {
     if (key === 'role') filters.role = ''
     if (key === 'status') filters.status = ''
     if (key === 'group') filters.group = ''
+    if (key === 'department') filters.department = ''
   } else {
     visibleFilters.add(key)
     if (key === 'group') loadAllGroups()
+    if (key === 'department') loadAllDepartments()
   }
   saveFiltersToStorage()
   pagination.page = 1
@@ -1437,6 +1480,9 @@ onMounted(async () => {
   loadUsers()
   if (hasVisibleGroupsColumn.value || visibleFilters.has('group')) {
     loadAllGroups()
+  }
+  if (visibleFilters.has('department')) {
+    loadAllDepartments()
   }
   document.addEventListener('click', handleClickOutside)
   window.addEventListener('scroll', handleScroll, true)
