@@ -70,6 +70,10 @@ type UserListFilters struct {
 	Search     string           // Search in email, username
 	GroupName  string           // Filter by allowed group name (fuzzy match)
 	Attributes map[int64]string // Custom attribute filters: attributeID -> value
+	// DepartmentIDs filters users belonging to specified department IDs.
+	// When recursive department filtering is enabled, this should include
+	// the target department and all its descendant department IDs.
+	DepartmentIDs []int64
 	// IncludeSubscriptions controls whether ListWithFilters should load active subscriptions.
 	// For large datasets this can be expensive; admin list pages should enable it on demand.
 	// nil means not specified (default: load subscriptions for backward compatibility).
