@@ -144,6 +144,10 @@ func (s *AuthService) RegisterOAuthEmailAccount(
 	signupSource = normalizeOAuthSignupSource(signupSource)
 	grantPlan := s.resolveSignupGrantPlan(ctx, signupSource)
 
+	oauthFlowDeptID, err := s.resolveDefaultDepartmentID(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 	user := &User{
 		Email:        email,
 		PasswordHash: hashedPassword,
@@ -152,6 +156,7 @@ func (s *AuthService) RegisterOAuthEmailAccount(
 		Concurrency:  grantPlan.Concurrency,
 		Status:       StatusActive,
 		SignupSource: signupSource,
+		DepartmentID: oauthFlowDeptID,
 	}
 
 	if err := s.userRepo.Create(ctx, user); err != nil {
@@ -224,6 +229,10 @@ func (s *AuthService) RegisterVerifiedOAuthEmailAccount(
 	if s.settingService != nil {
 		defaultRPMLimit = s.settingService.GetDefaultUserRPMLimit(ctx)
 	}
+	oauthVerifiedDeptID, deptErr := s.resolveDefaultDepartmentID(ctx)
+	if deptErr != nil {
+		return nil, nil, deptErr
+	}
 	user := &User{
 		Email:        email,
 		PasswordHash: hashedPassword,
@@ -233,6 +242,7 @@ func (s *AuthService) RegisterVerifiedOAuthEmailAccount(
 		RPMLimit:     defaultRPMLimit,
 		Status:       StatusActive,
 		SignupSource: signupSource,
+		DepartmentID: oauthVerifiedDeptID,
 	}
 
 	if err := s.userRepo.Create(ctx, user); err != nil {

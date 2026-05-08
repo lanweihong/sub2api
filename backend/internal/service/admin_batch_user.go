@@ -155,16 +155,22 @@ func (s *adminServiceImpl) CreateUsersBatch(ctx context.Context, input []BatchCr
 		Users: make([]BatchCreatedUserSummary, 0, len(normalized)),
 	}
 
+	batchDeptID, err := s.resolveDefaultDepartmentID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	createInContext := func(runCtx context.Context) error {
 		for _, item := range normalized {
 			user := &User{
-				Email:       item.Email,
-				Username:    item.Username,
-				Notes:       item.Notes,
-				Role:        RoleUser,
-				Balance:     item.Balance,
-				Concurrency: item.Concurrency,
-				Status:      StatusActive,
+				Email:        item.Email,
+				Username:     item.Username,
+				Notes:        item.Notes,
+				Role:         RoleUser,
+				Balance:      item.Balance,
+				Concurrency:  item.Concurrency,
+				Status:       StatusActive,
+				DepartmentID: batchDeptID,
 			}
 			if err := user.SetPassword(item.Password); err != nil {
 				return infraerrors.InternalServer("BATCH_USER_PASSWORD_HASH_FAILED", "failed to hash batch user password").WithCause(err)

@@ -166,6 +166,10 @@ func (s *AuthService) createEmailOAuthUser(ctx context.Context, email, username,
 	if s.settingService != nil {
 		defaultRPMLimit = s.settingService.GetDefaultUserRPMLimit(ctx)
 	}
+	autoDeptID, deptErr := s.resolveDefaultDepartmentID(ctx)
+	if deptErr != nil {
+		return nil, deptErr
+	}
 	user := &User{
 		Email:        email,
 		Username:     strings.TrimSpace(username),
@@ -176,6 +180,7 @@ func (s *AuthService) createEmailOAuthUser(ctx context.Context, email, username,
 		RPMLimit:     defaultRPMLimit,
 		Status:       StatusActive,
 		SignupSource: providerType,
+		DepartmentID: autoDeptID,
 	}
 	if err := s.userRepo.Create(ctx, user); err != nil {
 		if errors.Is(err, ErrEmailExists) {

@@ -74,6 +74,7 @@ type AuthService struct {
 	promoService       *PromoService
 	affiliateService   *AffiliateService
 	defaultSubAssigner DefaultSubscriptionAssigner
+	deptService        DepartmentService
 }
 
 type DefaultSubscriptionAssigner interface {
@@ -100,6 +101,7 @@ func NewAuthService(
 	promoService *PromoService,
 	defaultSubAssigner DefaultSubscriptionAssigner,
 	affiliateService *AffiliateService,
+	deptService DepartmentService,
 ) *AuthService {
 	return &AuthService{
 		entClient:          entClient,
@@ -114,7 +116,24 @@ func NewAuthService(
 		promoService:       promoService,
 		affiliateService:   affiliateService,
 		defaultSubAssigner: defaultSubAssigner,
+		deptService:        deptService,
 	}
+}
+
+// resolveDefaultDepartmentID 安全地获取默认部门 ID。
+// 若 deptService 未注入或默认部门不存在，返回 ErrServiceUnavailable。
+func (s *AuthService) resolveDefaultDepartmentID(ctx context.Context) (int64, error) {
+	if s.deptService == nil {
+		return 0, ErrServiceUnavailable
+	}
+	id, err := s.deptService.GetDefaultDepartmentID(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if id <= 0 {
+		return 0, ErrServiceUnavailable
+	}
+	return id, nil
 }
 
 func (s *AuthService) EntClient() *dbent.Client {
@@ -205,6 +224,11 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		defaultRPMLimit = s.settingService.GetDefaultUserRPMLimit(ctx)
 	}
 
+	defaultDeptID, err := s.resolveDefaultDepartmentID(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+
 	// 创建用户
 	user := &User{
 		Email:        email,
@@ -214,6 +238,7 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		Concurrency:  grantPlan.Concurrency,
 		RPMLimit:     defaultRPMLimit,
 		Status:       StatusActive,
+		DepartmentID: defaultDeptID,
 	}
 
 	if err := s.userRepo.Create(ctx, user); err != nil {
@@ -507,6 +532,10 @@ func (s *AuthService) LoginOrRegisterOAuth(ctx context.Context, email, username 
 				defaultRPMLimit = s.settingService.GetDefaultUserRPMLimit(ctx)
 			}
 
+			oauthDeptID, deptErr := s.resolveDefaultDepartmentID(ctx)
+			if deptErr != nil {
+				return "", nil, deptErr
+			}
 			newUser := &User{
 				Email:        email,
 				Username:     username,
@@ -517,6 +546,7 @@ func (s *AuthService) LoginOrRegisterOAuth(ctx context.Context, email, username 
 				RPMLimit:     defaultRPMLimit,
 				Status:       StatusActive,
 				SignupSource: signupSource,
+				DepartmentID: oauthDeptID,
 			}
 
 			if err := s.userRepo.Create(ctx, newUser); err != nil {
@@ -624,6 +654,10 @@ func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 				defaultRPMLimit = s.settingService.GetDefaultUserRPMLimit(ctx)
 			}
 
+			oauthDeptID2, deptErr2 := s.resolveDefaultDepartmentID(ctx)
+			if deptErr2 != nil {
+				return nil, nil, deptErr2
+			}
 			newUser := &User{
 				Email:        email,
 				Username:     username,
@@ -634,6 +668,7 @@ func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 				RPMLimit:     defaultRPMLimit,
 				Status:       StatusActive,
 				SignupSource: signupSource,
+				DepartmentID: oauthDeptID2,
 			}
 
 			if s.entClient != nil && invitationRedeemCode != nil {

@@ -128,6 +128,7 @@ type CreateUserInput struct {
 	Concurrency   int
 	RPMLimit      int
 	AllowedGroups []int64
+	DepartmentID  int64 // 0 表示使用默认部门
 }
 
 type UpdateUserInput struct {
@@ -142,6 +143,7 @@ type UpdateUserInput struct {
 	RPMLimit      *int     // 使用指针区分"未提供"和"设置为0"
 	Status        string
 	AllowedGroups *[]int64 // 使用指针区分"未提供"和"设置为空数组"
+	DepartmentID  *int64   // 使用指针区分"未提供"和"显式设置"
 	// GroupRates 用户专属分组倍率配置
 	// map[groupID]*rate，nil 表示删除该分组的专属倍率
 	GroupRates map[int64]*float64
@@ -548,6 +550,7 @@ type adminServiceImpl struct {
 	defaultSubAssigner   DefaultSubscriptionAssigner
 	userSubRepo          UserSubscriptionRepository
 	privacyClientFactory PrivacyClientFactory
+	deptService          DepartmentService
 }
 
 type userGroupRateBatchReader interface {
@@ -573,6 +576,7 @@ func NewAdminService(
 	defaultSubAssigner DefaultSubscriptionAssigner,
 	userSubRepo UserSubscriptionRepository,
 	privacyClientFactory PrivacyClientFactory,
+	deptService DepartmentService,
 ) AdminService {
 	return &adminServiceImpl{
 		userRepo:             userRepo,
@@ -592,7 +596,24 @@ func NewAdminService(
 		defaultSubAssigner:   defaultSubAssigner,
 		userSubRepo:          userSubRepo,
 		privacyClientFactory: privacyClientFactory,
+		deptService:          deptService,
 	}
+}
+
+// resolveDefaultDepartmentID 安全地获取默认部门 ID。
+// 若 deptService 未注入或默认部门不存在，返回错误。
+func (s *adminServiceImpl) resolveDefaultDepartmentID(ctx context.Context) (int64, error) {
+	if s.deptService == nil {
+		return 0, ErrServiceUnavailable
+	}
+	id, err := s.deptService.GetDefaultDepartmentID(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if id <= 0 {
+		return 0, ErrServiceUnavailable
+	}
+	return id, nil
 }
 
 // User management implementations
@@ -679,6 +700,23 @@ func (s *adminServiceImpl) GetUser(ctx context.Context, id int64) (*User, error)
 }
 
 func (s *adminServiceImpl) CreateUser(ctx context.Context, input *CreateUserInput) (*User, error) {
+	deptID := input.DepartmentID
+	if deptID == 0 {
+		defaultID, err := s.resolveDefaultDepartmentID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		deptID = defaultID
+	} else {
+		dept, err := s.deptService.GetByID(ctx, deptID)
+		if err != nil {
+			return nil, ErrDepartmentNotFound
+		}
+		if dept.Status == "disabled" {
+			return nil, ErrDepartmentDisabled
+		}
+	}
+
 	user := &User{
 		Email:         input.Email,
 		Username:      input.Username,
@@ -689,6 +727,7 @@ func (s *adminServiceImpl) CreateUser(ctx context.Context, input *CreateUserInpu
 		RPMLimit:      input.RPMLimit,
 		Status:        StatusActive,
 		AllowedGroups: input.AllowedGroups,
+		DepartmentID:  deptID,
 	}
 	if err := user.SetPassword(input.Password); err != nil {
 		return nil, err
@@ -789,6 +828,20 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 
 	if input.AllowedGroups != nil {
 		user.AllowedGroups = *input.AllowedGroups
+	}
+
+	if input.DepartmentID != nil {
+		newDeptID := *input.DepartmentID
+		if newDeptID > 0 {
+			dept, err := s.deptService.GetByID(ctx, newDeptID)
+			if err != nil {
+				return nil, ErrDepartmentNotFound
+			}
+			if dept.Status == "disabled" {
+				return nil, ErrDepartmentDisabled
+			}
+			user.DepartmentID = newDeptID
+		}
 	}
 
 	if err := s.userRepo.Update(ctx, user); err != nil {
