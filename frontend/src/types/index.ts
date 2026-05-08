@@ -97,6 +97,7 @@ export interface User {
   balance_notify_threshold: number | null
   balance_notify_extra_emails: NotifyEmailEntry[]
   subscriptions?: UserSubscription[] // User's active subscriptions
+  department_id: number
   last_active_at?: string | null
   created_at: string
   updated_at: string
@@ -1547,6 +1548,39 @@ export interface ApiKeyUsageTrendPoint {
   tokens: number
 }
 
+// ==================== Department Types ====================
+
+export interface Department {
+  id: number
+  name: string
+  code: string
+  description: string
+  parent_id: number | null
+  sort_order: number
+  status: 'active' | 'disabled'
+  is_default: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateDepartmentRequest {
+  name: string
+  code: string
+  description?: string
+  parent_id?: number | null
+  sort_order?: number
+  status?: 'active' | 'disabled'
+}
+
+export interface UpdateDepartmentRequest {
+  name?: string
+  code?: string
+  description?: string
+  parent_id?: number | null
+  sort_order?: number
+  status?: 'active' | 'disabled'
+}
+
 // ==================== Admin User Management ====================
 
 export interface UpdateUserRequest {
@@ -1559,6 +1593,7 @@ export interface UpdateUserRequest {
   concurrency?: number
   status?: 'active' | 'disabled'
   allowed_groups?: number[] | null
+  department_id?: number
   // 用户专属分组倍率配置 (group_id -> rate_multiplier | null)
   // null 表示删除该分组的专属倍率
   group_rates?: Record<number, number | null>
