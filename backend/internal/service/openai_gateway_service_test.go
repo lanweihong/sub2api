@@ -1506,7 +1506,7 @@ func TestOpenAINonStreamingContentTypePassThrough(t *testing.T) {
 		Header:     http.Header{"Content-Type": []string{"application/vnd.test+json"}},
 	}
 
-	_, _, err := svc.handleNonStreamingResponse(c.Request.Context(), resp, c, &Account{}, "model", "model")
+	_, err := svc.handleNonStreamingResponse(c.Request.Context(), resp, c, &Account{}, "model", "model", 0)
 	if err != nil {
 		t.Fatalf("handleNonStreamingResponse error: %v", err)
 	}
@@ -1536,7 +1536,7 @@ func TestOpenAINonStreamingContentTypeDefault(t *testing.T) {
 		Header:     http.Header{},
 	}
 
-	_, _, err := svc.handleNonStreamingResponse(c.Request.Context(), resp, c, &Account{}, "model", "model")
+	_, err := svc.handleNonStreamingResponse(c.Request.Context(), resp, c, &Account{}, "model", "model", 0)
 	if err != nil {
 		t.Fatalf("handleNonStreamingResponse error: %v", err)
 	}
@@ -1820,6 +1820,29 @@ func TestOpenAIBuildUpstreamRequestCompactForcesJSONAcceptForOAuth(t *testing.T)
 	require.Equal(t, "application/json", req.Header.Get("Accept"))
 	require.Equal(t, codexCLIVersion, req.Header.Get("Version"))
 	require.NotEmpty(t, req.Header.Get("Session_Id"))
+}
+
+func TestOpenAIBuildUpstreamRequestOAuthMessagesBridgeUsesSessionOnly(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"gpt-5.5","prompt_cache_key":"anthropic-metadata-session-1","input":[{"type":"message","role":"developer","content":[{"type":"input_text","text":"<sub2api-claude-code-todo-guard>"}]},{"type":"message","role":"user","content":"hello"}]}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("OpenAI-Beta", "responses=experimental")
+	c.Request.Header.Set("originator", "codex_cli_rs")
+
+	svc := &OpenAIGatewayService{}
+	account := &Account{
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{"chatgpt_account_id": "chatgpt-acc"},
+	}
+
+	req, err := svc.buildUpstreamRequest(c.Request.Context(), c, account, body, "token", true, "anthropic-metadata-session-1", false)
+	require.NoError(t, err)
+	require.NotEmpty(t, req.Header.Get("Session_Id"))
+	require.Empty(t, req.Header.Get("Conversation_Id"))
+	require.Empty(t, req.Header.Get("OpenAI-Beta"))
+	require.Empty(t, req.Header.Get("originator"))
 }
 
 func TestOpenAIBuildUpstreamRequestPreservesCompactPathForAPIKeyBaseURL(t *testing.T) {
@@ -2184,12 +2207,13 @@ func TestHandleSSEToJSON_CompletedEventReturnsJSON(t *testing.T) {
 		`data: [DONE]`,
 	}, "\n"))
 
-	usage, _, err := svc.handleSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o")
+	result, err := svc.handleSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o", 0)
 	require.NoError(t, err)
-	require.NotNil(t, usage)
-	require.Equal(t, 7, usage.InputTokens)
-	require.Equal(t, 9, usage.OutputTokens)
-	require.Equal(t, 1, usage.CacheReadInputTokens)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 7, result.usage.InputTokens)
+	require.Equal(t, 9, result.usage.OutputTokens)
+	require.Equal(t, 1, result.usage.CacheReadInputTokens)
 	// Header 可能由上游 Content-Type 透传；关键是 body 已转换为最终 JSON 响应。
 	require.NotContains(t, rec.Body.String(), "event:")
 	require.Contains(t, rec.Body.String(), `"id":"resp_2"`)
@@ -2213,10 +2237,11 @@ func TestHandleSSEToJSON_ReconstructsImageGenerationOutputItemDone(t *testing.T)
 		`data: [DONE]`,
 	}, "\n"))
 
-	usage, _, err := svc.handleSSEToJSON(resp, c, body, "gpt-5.4", "gpt-5.4")
+	result, err := svc.handleSSEToJSON(resp, c, body, "gpt-5.4", "gpt-5.4", 0)
 	require.NoError(t, err)
-	require.NotNil(t, usage)
-	require.Equal(t, 4, usage.ImageOutputTokens)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 4, result.usage.ImageOutputTokens)
 	require.NotContains(t, rec.Body.String(), "data:")
 	require.Equal(t, "image_generation_call", gjson.Get(rec.Body.String(), "output.0.type").String())
 	require.Equal(t, "aGVsbG8=", gjson.Get(rec.Body.String(), "output.0.result").String())
@@ -2239,10 +2264,11 @@ func TestHandleSSEToJSON_NoFinalResponseKeepsSSEBody(t *testing.T) {
 		`data: [DONE]`,
 	}, "\n"))
 
-	usage, _, err := svc.handleSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o")
+	result, err := svc.handleSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o", 0)
 	require.NoError(t, err)
-	require.NotNil(t, usage)
-	require.Equal(t, 0, usage.InputTokens)
+	require.NotNil(t, result)
+	require.NotNil(t, result.usage)
+	require.Equal(t, 0, result.usage.InputTokens)
 	require.Contains(t, rec.Header().Get("Content-Type"), "text/event-stream")
 	require.Contains(t, rec.Body.String(), `data: {"type":"response.in_progress"`)
 }
@@ -2263,8 +2289,8 @@ func TestHandleSSEToJSON_ResponseFailedReturnsProtocolError(t *testing.T) {
 		`data: [DONE]`,
 	}, "\n"))
 
-	usage, _, err := svc.handleSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o")
-	require.Nil(t, usage)
+	result, err := svc.handleSSEToJSON(resp, c, body, "gpt-4o", "gpt-4o", 0)
+	require.Nil(t, result)
 	require.Error(t, err)
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.Contains(t, rec.Body.String(), "upstream rejected request")
