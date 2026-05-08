@@ -18,7 +18,7 @@ func setupAdminRouter() (*gin.Engine, *stubAdminService) {
 	router := gin.New()
 	adminSvc := newStubAdminService()
 
-	userHandler := NewUserHandler(adminSvc, nil)
+	userHandler := NewUserHandler(adminSvc, nil, nil)
 	groupHandler := NewGroupHandler(adminSvc, nil, nil)
 	proxyHandler := NewProxyHandler(adminSvc)
 	redeemHandler := NewRedeemHandler(adminSvc, nil)
@@ -173,7 +173,7 @@ func TestUserHandlerBindAuthIdentityMapsRequest(t *testing.T) {
 		c.Next()
 	})
 	adminSvc := newStubAdminService()
-	userHandler := NewUserHandler(adminSvc, nil)
+	userHandler := NewUserHandler(adminSvc, nil, nil)
 	router.POST("/api/v1/admin/users/:id/auth-identities", userHandler.BindAuthIdentity)
 
 	body, err := json.Marshal(map[string]any{

@@ -137,7 +137,8 @@ func newOAuthEmailFlowAuthService(
 		nil,
 		nil,
 		nil,
-		nil,
+		nil,              // affiliateService
+		deptServiceStub{}, // deptService
 	)
 }
 

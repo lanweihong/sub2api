@@ -178,6 +178,22 @@ func (s *emailCacheStub) IncrNotifyCodeUserRate(ctx context.Context, userID int6
 	return 0, nil
 }
 
+// deptServiceStub 是 DepartmentService 的最小实现，满足 resolveDefaultDepartmentID 调用。
+type deptServiceStub struct{ defaultID int64 }
+
+func (s deptServiceStub) List(_ context.Context) ([]Department, error)                              { return nil, nil }
+func (s deptServiceStub) GetByID(_ context.Context, _ int64) (*Department, error)                    { return nil, nil }
+func (s deptServiceStub) Create(_ context.Context, _ *CreateDepartmentInput) (*Department, error)    { return nil, nil }
+func (s deptServiceStub) Update(_ context.Context, _ int64, _ *UpdateDepartmentInput) (*Department, error) { return nil, nil }
+func (s deptServiceStub) Delete(_ context.Context, _ int64, _ bool) error                            { return nil }
+func (s deptServiceStub) GetDefaultDepartmentID(_ context.Context) (int64, error) {
+	if s.defaultID > 0 {
+		return s.defaultID, nil
+	}
+	return 1, nil
+}
+func (s deptServiceStub) ListDescendantIDs(_ context.Context, _ int64) ([]int64, error) { return nil, nil }
+
 func newAuthService(repo *userRepoStub, settings map[string]string, emailCache EmailCache) *AuthService {
 	cfg := &config.Config{
 		JWT: config.JWTConfig{
@@ -212,7 +228,8 @@ func newAuthService(repo *userRepoStub, settings map[string]string, emailCache E
 		nil,
 		nil, // promoService
 		nil, // defaultSubAssigner
-		nil, // affiliateService
+		nil,              // affiliateService
+		deptServiceStub{}, // deptService
 	)
 }
 

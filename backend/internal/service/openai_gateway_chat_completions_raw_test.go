@@ -18,7 +18,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-func TestBuildOpenAIChatCompletionsURL(t *testing.T) {
+func TestBuildOpenAIChatCompletionsURL_Raw(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {

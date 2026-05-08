@@ -17,7 +17,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-func TestBuildOpenAIChatCompletionsURL(t *testing.T) {
+func TestBuildOpenAIChatCompletionsURL_Direct(t *testing.T) {
 	tests := []struct {
 		name string
 		base string
