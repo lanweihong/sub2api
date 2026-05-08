@@ -68,6 +68,22 @@ func translatePersistenceError(err error, notFound, conflict *infraerrors.Applic
 	return err
 }
 
+// translateConstraintConflict 按 pq.Error.Constraint 名称精准映射唯一约束冲突。
+// 若错误不是唯一约束冲突或 constraint 名不在映射中，返回 nil（调用者应 fallback）。
+func translateConstraintConflict(err error, byConstraint map[string]*infraerrors.ApplicationError) error {
+	if err == nil || len(byConstraint) == 0 {
+		return nil
+	}
+	var pgErr *pq.Error
+	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
+		return nil
+	}
+	if appErr, ok := byConstraint[pgErr.Constraint]; ok {
+		return appErr.WithCause(err)
+	}
+	return nil
+}
+
 // isUniqueConstraintViolation 判断错误是否为唯一约束冲突。
 //
 // 支持多种检测方式：
