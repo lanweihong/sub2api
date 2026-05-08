@@ -97,6 +97,20 @@ func RegisterAdminRoutes(
 
 		// 邀请返利（专属用户管理）
 		registerAffiliateRoutes(admin, h)
+
+		// 部门管理
+		registerDepartmentRoutes(admin, h)
+	}
+}
+
+func registerDepartmentRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	departments := admin.Group("/departments")
+	{
+		departments.GET("", h.Admin.Department.List)
+		departments.GET("/:id", h.Admin.Department.Get)
+		departments.POST("", h.Admin.Department.Create)
+		departments.PUT("/:id", h.Admin.Department.Update)
+		departments.DELETE("/:id", h.Admin.Department.Delete)
 	}
 }
 

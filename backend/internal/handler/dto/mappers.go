@@ -30,6 +30,7 @@ func UserFromServiceShallow(u *service.User) *User {
 		BalanceNotifyExtraEmails:   NotifyEmailEntriesFromService(u.BalanceNotifyExtraEmails),
 		TotalRecharged:             u.TotalRecharged,
 		RPMLimit:                   u.RPMLimit,
+		DepartmentID:               u.DepartmentID,
 	}
 }
 
@@ -71,6 +72,32 @@ func UserFromServiceAdmin(u *service.User) *AdminUser {
 		LastUsedAt: u.LastUsedAt,
 		GroupRates: u.GroupRates,
 	}
+}
+
+func DepartmentFromService(d *service.Department) *Department {
+	if d == nil {
+		return nil
+	}
+	return &Department{
+		ID:          d.ID,
+		Name:        d.Name,
+		Code:        d.Code,
+		Description: d.Description,
+		ParentID:    d.ParentID,
+		SortOrder:   d.SortOrder,
+		Status:      d.Status,
+		IsDefault:   d.IsDefault,
+		CreatedAt:   d.CreatedAt,
+		UpdatedAt:   d.UpdatedAt,
+	}
+}
+
+func DepartmentsFromService(depts []service.Department) []Department {
+	out := make([]Department, 0, len(depts))
+	for i := range depts {
+		out = append(out, *DepartmentFromService(&depts[i]))
+	}
+	return out
 }
 
 func APIKeyFromService(k *service.APIKey) *APIKey {

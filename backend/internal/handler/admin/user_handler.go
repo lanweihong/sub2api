@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -23,13 +24,15 @@ type UserWithConcurrency struct {
 type UserHandler struct {
 	adminService       service.AdminService
 	concurrencyService *service.ConcurrencyService
+	deptService        service.DepartmentService
 }
 
 // NewUserHandler creates a new admin user handler
-func NewUserHandler(adminService service.AdminService, concurrencyService *service.ConcurrencyService) *UserHandler {
+func NewUserHandler(adminService service.AdminService, concurrencyService *service.ConcurrencyService, deptService service.DepartmentService) *UserHandler {
 	return &UserHandler{
 		adminService:       adminService,
 		concurrencyService: concurrencyService,
+		deptService:        deptService,
 	}
 }
 
@@ -43,6 +46,7 @@ type CreateUserRequest struct {
 	Concurrency   int     `json:"concurrency"`
 	RPMLimit      int     `json:"rpm_limit"`
 	AllowedGroups []int64 `json:"allowed_groups"`
+	DepartmentID  int64   `json:"department_id"`
 }
 
 // UpdateUserRequest represents admin update user request
@@ -58,6 +62,7 @@ type UpdateUserRequest struct {
 	RPMLimit      *int     `json:"rpm_limit"`
 	Status        string   `json:"status" binding:"omitempty,oneof=active disabled"`
 	AllowedGroups *[]int64 `json:"allowed_groups"`
+	DepartmentID  *int64   `json:"department_id"`
 	// GroupRates 用户专属分组倍率配置
 	// map[groupID]*rate，nil 表示删除该分组的专属倍率
 	GroupRates map[int64]*float64 `json:"group_rates"`
@@ -110,6 +115,25 @@ func (h *UserHandler) List(c *gin.Context) {
 		Search:     search,
 		GroupName:  strings.TrimSpace(c.Query("group_name")),
 		Attributes: parseAttributeFilters(c),
+	}
+	if deptIDStr := c.Query("department_id"); deptIDStr != "" {
+		if deptID, err := strconv.ParseInt(deptIDStr, 10, 64); err == nil && deptID > 0 {
+			if h.deptService == nil {
+				response.ErrorFrom(c, infraerrors.ServiceUnavailable(
+					"DEPARTMENT_FILTER_UNAVAILABLE",
+					"department filter is not configured",
+				))
+				return
+			}
+			ids := []int64{deptID}
+			descIDs, err := h.deptService.ListDescendantIDs(c.Request.Context(), deptID)
+			if err != nil {
+				response.ErrorFrom(c, err)
+				return
+			}
+			ids = append(ids, descIDs...)
+			filters.DepartmentIDs = ids
+		}
 	}
 	sortBy := c.DefaultQuery("sort_by", "created_at")
 	sortOrder := c.DefaultQuery("sort_order", "desc")
@@ -250,6 +274,7 @@ func (h *UserHandler) Create(c *gin.Context) {
 		Concurrency:   req.Concurrency,
 		RPMLimit:      req.RPMLimit,
 		AllowedGroups: req.AllowedGroups,
+		DepartmentID:  req.DepartmentID,
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -287,6 +312,7 @@ func (h *UserHandler) Update(c *gin.Context) {
 		RPMLimit:      req.RPMLimit,
 		Status:        req.Status,
 		AllowedGroups: req.AllowedGroups,
+		DepartmentID:  req.DepartmentID,
 		GroupRates:    req.GroupRates,
 	})
 	if err != nil {
