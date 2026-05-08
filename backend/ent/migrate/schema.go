@@ -624,6 +624,56 @@ var (
 			},
 		},
 	}
+	// DepartmentsColumns holds the columns for the "departments" table.
+	DepartmentsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "name", Type: field.TypeString, Size: 100},
+		{Name: "code", Type: field.TypeString, Size: 50, Default: ""},
+		{Name: "description", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "sort_order", Type: field.TypeInt, Default: 0},
+		{Name: "status", Type: field.TypeString, Size: 20, Default: "active"},
+		{Name: "is_default", Type: field.TypeBool, Default: false},
+		{Name: "parent_id", Type: field.TypeInt64, Nullable: true},
+	}
+	// DepartmentsTable holds the schema information for the "departments" table.
+	DepartmentsTable = &schema.Table{
+		Name:       "departments",
+		Columns:    DepartmentsColumns,
+		PrimaryKey: []*schema.Column{DepartmentsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "departments_departments_parent",
+				Columns:    []*schema.Column{DepartmentsColumns[10]},
+				RefColumns: []*schema.Column{DepartmentsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "department_parent_id",
+				Unique:  false,
+				Columns: []*schema.Column{DepartmentsColumns[10]},
+			},
+			{
+				Name:    "department_status",
+				Unique:  false,
+				Columns: []*schema.Column{DepartmentsColumns[8]},
+			},
+			{
+				Name:    "department_sort_order",
+				Unique:  false,
+				Columns: []*schema.Column{DepartmentsColumns[7]},
+			},
+			{
+				Name:    "department_deleted_at",
+				Unique:  false,
+				Columns: []*schema.Column{DepartmentsColumns[3]},
+			},
+		},
+	}
 	// ErrorPassthroughRulesColumns holds the columns for the "error_passthrough_rules" table.
 	ErrorPassthroughRulesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -1520,12 +1570,21 @@ var (
 		{Name: "balance_notify_extra_emails", Type: field.TypeString, Default: "[]", SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "total_recharged", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
 		{Name: "rpm_limit", Type: field.TypeInt, Default: 0},
+		{Name: "department_id", Type: field.TypeInt64},
 	}
 	// UsersTable holds the schema information for the "users" table.
 	UsersTable = &schema.Table{
 		Name:       "users",
 		Columns:    UsersColumns,
 		PrimaryKey: []*schema.Column{UsersColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "users_departments_department",
+				Columns:    []*schema.Column{UsersColumns[24]},
+				RefColumns: []*schema.Column{DepartmentsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
 		Indexes: []*schema.Index{
 			{
 				Name:    "user_status",
@@ -1536,6 +1595,11 @@ var (
 				Name:    "user_deleted_at",
 				Unique:  false,
 				Columns: []*schema.Column{UsersColumns[3]},
+			},
+			{
+				Name:    "user_department_id",
+				Unique:  false,
+				Columns: []*schema.Column{UsersColumns[24]},
 			},
 		},
 	}
@@ -1761,6 +1825,7 @@ var (
 		ChannelMonitorDailyRollupsTable,
 		ChannelMonitorHistoriesTable,
 		ChannelMonitorRequestTemplatesTable,
+		DepartmentsTable,
 		ErrorPassthroughRulesTable,
 		GroupsTable,
 		IdempotencyRecordsTable,
@@ -1839,6 +1904,10 @@ func init() {
 	ChannelMonitorRequestTemplatesTable.Annotation = &entsql.Annotation{
 		Table: "channel_monitor_request_templates",
 	}
+	DepartmentsTable.ForeignKeys[0].RefTable = DepartmentsTable
+	DepartmentsTable.Annotation = &entsql.Annotation{
+		Table: "departments",
+	}
 	ErrorPassthroughRulesTable.Annotation = &entsql.Annotation{
 		Table: "error_passthrough_rules",
 	}
@@ -1909,6 +1978,7 @@ func init() {
 	UsageLogPayloadsTable.Annotation = &entsql.Annotation{
 		Table: "usage_log_payloads",
 	}
+	UsersTable.ForeignKeys[0].RefTable = DepartmentsTable
 	UsersTable.Annotation = &entsql.Annotation{
 		Table: "users",
 	}

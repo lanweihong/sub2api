@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
+	"github.com/Wei-Shaw/sub2api/ent/department"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/pendingauthsession"
@@ -410,6 +411,20 @@ func (_u *UserUpdate) AddRpmLimit(v int) *UserUpdate {
 	return _u
 }
 
+// SetDepartmentID sets the "department_id" field.
+func (_u *UserUpdate) SetDepartmentID(v int64) *UserUpdate {
+	_u.mutation.SetDepartmentID(v)
+	return _u
+}
+
+// SetNillableDepartmentID sets the "department_id" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableDepartmentID(v *int64) *UserUpdate {
+	if v != nil {
+		_u.SetDepartmentID(*v)
+	}
+	return _u
+}
+
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by IDs.
 func (_u *UserUpdate) AddAPIKeyIDs(ids ...int64) *UserUpdate {
 	_u.mutation.AddAPIKeyIDs(ids...)
@@ -588,6 +603,11 @@ func (_u *UserUpdate) AddPendingAuthSessions(v ...*PendingAuthSession) *UserUpda
 		ids[i] = v[i].ID
 	}
 	return _u.AddPendingAuthSessionIDs(ids...)
+}
+
+// SetDepartment sets the "department" edge to the Department entity.
+func (_u *UserUpdate) SetDepartment(v *Department) *UserUpdate {
+	return _u.SetDepartmentID(v.ID)
 }
 
 // Mutation returns the UserMutation object of the builder.
@@ -847,6 +867,12 @@ func (_u *UserUpdate) RemovePendingAuthSessions(v ...*PendingAuthSession) *UserU
 	return _u.RemovePendingAuthSessionIDs(ids...)
 }
 
+// ClearDepartment clears the "department" edge to the Department entity.
+func (_u *UserUpdate) ClearDepartment() *UserUpdate {
+	_u.mutation.ClearDepartment()
+	return _u
+}
+
 // Save executes the query and returns the number of nodes affected by the update operation.
 func (_u *UserUpdate) Save(ctx context.Context) (int, error) {
 	if err := _u.defaults(); err != nil {
@@ -920,6 +946,9 @@ func (_u *UserUpdate) check() error {
 		if err := user.SignupSourceValidator(v); err != nil {
 			return &ValidationError{Name: "signup_source", err: fmt.Errorf(`ent: validator failed for field "User.signup_source": %w`, err)}
 		}
+	}
+	if _u.mutation.DepartmentCleared() && len(_u.mutation.DepartmentIDs()) > 0 {
+		return errors.New(`ent: clearing a required unique edge "User.department"`)
 	}
 	return nil
 }
@@ -1587,6 +1616,35 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.DepartmentCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   user.DepartmentTable,
+			Columns: []string{user.DepartmentColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(department.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.DepartmentIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   user.DepartmentTable,
+			Columns: []string{user.DepartmentColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(department.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{user.Label}
@@ -1978,6 +2036,20 @@ func (_u *UserUpdateOne) AddRpmLimit(v int) *UserUpdateOne {
 	return _u
 }
 
+// SetDepartmentID sets the "department_id" field.
+func (_u *UserUpdateOne) SetDepartmentID(v int64) *UserUpdateOne {
+	_u.mutation.SetDepartmentID(v)
+	return _u
+}
+
+// SetNillableDepartmentID sets the "department_id" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableDepartmentID(v *int64) *UserUpdateOne {
+	if v != nil {
+		_u.SetDepartmentID(*v)
+	}
+	return _u
+}
+
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by IDs.
 func (_u *UserUpdateOne) AddAPIKeyIDs(ids ...int64) *UserUpdateOne {
 	_u.mutation.AddAPIKeyIDs(ids...)
@@ -2156,6 +2228,11 @@ func (_u *UserUpdateOne) AddPendingAuthSessions(v ...*PendingAuthSession) *UserU
 		ids[i] = v[i].ID
 	}
 	return _u.AddPendingAuthSessionIDs(ids...)
+}
+
+// SetDepartment sets the "department" edge to the Department entity.
+func (_u *UserUpdateOne) SetDepartment(v *Department) *UserUpdateOne {
+	return _u.SetDepartmentID(v.ID)
 }
 
 // Mutation returns the UserMutation object of the builder.
@@ -2415,6 +2492,12 @@ func (_u *UserUpdateOne) RemovePendingAuthSessions(v ...*PendingAuthSession) *Us
 	return _u.RemovePendingAuthSessionIDs(ids...)
 }
 
+// ClearDepartment clears the "department" edge to the Department entity.
+func (_u *UserUpdateOne) ClearDepartment() *UserUpdateOne {
+	_u.mutation.ClearDepartment()
+	return _u
+}
+
 // Where appends a list predicates to the UserUpdate builder.
 func (_u *UserUpdateOne) Where(ps ...predicate.User) *UserUpdateOne {
 	_u.mutation.Where(ps...)
@@ -2501,6 +2584,9 @@ func (_u *UserUpdateOne) check() error {
 		if err := user.SignupSourceValidator(v); err != nil {
 			return &ValidationError{Name: "signup_source", err: fmt.Errorf(`ent: validator failed for field "User.signup_source": %w`, err)}
 		}
+	}
+	if _u.mutation.DepartmentCleared() && len(_u.mutation.DepartmentIDs()) > 0 {
+		return errors.New(`ent: clearing a required unique edge "User.department"`)
 	}
 	return nil
 }
@@ -3178,6 +3264,35 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(pendingauthsession.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.DepartmentCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   user.DepartmentTable,
+			Columns: []string{user.DepartmentColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(department.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.DepartmentIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   user.DepartmentTable,
+			Columns: []string{user.DepartmentColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(department.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

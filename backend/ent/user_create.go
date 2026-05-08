@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
+	"github.com/Wei-Shaw/sub2api/ent/department"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/pendingauthsession"
@@ -339,6 +340,12 @@ func (_c *UserCreate) SetNillableRpmLimit(v *int) *UserCreate {
 	return _c
 }
 
+// SetDepartmentID sets the "department_id" field.
+func (_c *UserCreate) SetDepartmentID(v int64) *UserCreate {
+	_c.mutation.SetDepartmentID(v)
+	return _c
+}
+
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by IDs.
 func (_c *UserCreate) AddAPIKeyIDs(ids ...int64) *UserCreate {
 	_c.mutation.AddAPIKeyIDs(ids...)
@@ -517,6 +524,11 @@ func (_c *UserCreate) AddPendingAuthSessions(v ...*PendingAuthSession) *UserCrea
 		ids[i] = v[i].ID
 	}
 	return _c.AddPendingAuthSessionIDs(ids...)
+}
+
+// SetDepartment sets the "department" edge to the Department entity.
+func (_c *UserCreate) SetDepartment(v *Department) *UserCreate {
+	return _c.SetDepartmentID(v.ID)
 }
 
 // Mutation returns the UserMutation object of the builder.
@@ -707,6 +719,12 @@ func (_c *UserCreate) check() error {
 	}
 	if _, ok := _c.mutation.RpmLimit(); !ok {
 		return &ValidationError{Name: "rpm_limit", err: errors.New(`ent: missing required field "User.rpm_limit"`)}
+	}
+	if _, ok := _c.mutation.DepartmentID(); !ok {
+		return &ValidationError{Name: "department_id", err: errors.New(`ent: missing required field "User.department_id"`)}
+	}
+	if len(_c.mutation.DepartmentIDs()) == 0 {
+		return &ValidationError{Name: "department", err: errors.New(`ent: missing required edge "User.department"`)}
 	}
 	return nil
 }
@@ -1021,6 +1039,23 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 		for _, k := range nodes {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.DepartmentIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   user.DepartmentTable,
+			Columns: []string{user.DepartmentColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(department.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.DepartmentID = nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
@@ -1402,6 +1437,18 @@ func (u *UserUpsert) UpdateRpmLimit() *UserUpsert {
 // AddRpmLimit adds v to the "rpm_limit" field.
 func (u *UserUpsert) AddRpmLimit(v int) *UserUpsert {
 	u.Add(user.FieldRpmLimit, v)
+	return u
+}
+
+// SetDepartmentID sets the "department_id" field.
+func (u *UserUpsert) SetDepartmentID(v int64) *UserUpsert {
+	u.Set(user.FieldDepartmentID, v)
+	return u
+}
+
+// UpdateDepartmentID sets the "department_id" field to the value that was provided on create.
+func (u *UserUpsert) UpdateDepartmentID() *UserUpsert {
+	u.SetExcluded(user.FieldDepartmentID)
 	return u
 }
 
@@ -1832,6 +1879,20 @@ func (u *UserUpsertOne) AddRpmLimit(v int) *UserUpsertOne {
 func (u *UserUpsertOne) UpdateRpmLimit() *UserUpsertOne {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateRpmLimit()
+	})
+}
+
+// SetDepartmentID sets the "department_id" field.
+func (u *UserUpsertOne) SetDepartmentID(v int64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetDepartmentID(v)
+	})
+}
+
+// UpdateDepartmentID sets the "department_id" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateDepartmentID() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateDepartmentID()
 	})
 }
 
@@ -2428,6 +2489,20 @@ func (u *UserUpsertBulk) AddRpmLimit(v int) *UserUpsertBulk {
 func (u *UserUpsertBulk) UpdateRpmLimit() *UserUpsertBulk {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateRpmLimit()
+	})
+}
+
+// SetDepartmentID sets the "department_id" field.
+func (u *UserUpsertBulk) SetDepartmentID(v int64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetDepartmentID(v)
+	})
+}
+
+// UpdateDepartmentID sets the "department_id" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateDepartmentID() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateDepartmentID()
 	})
 }
 

@@ -112,6 +112,10 @@ func (User) Fields() []ent.Field {
 		// 用户级每分钟请求数上限（0 = 不限制）。仅当所在分组未设置 rpm_limit 时作为兜底生效。
 		field.Int("rpm_limit").
 			Default(0),
+
+		// 所属部门 ID（每个用户必须归属唯一部门）
+		field.Int64("department_id").
+			Comment("所属部门 ID，每个用户必须归属唯一部门"),
 	}
 }
 
@@ -131,6 +135,10 @@ func (User) Edges() []ent.Edge {
 		edge.To("auth_identities", AuthIdentity.Type).
 			Annotations(entsql.OnDelete(entsql.Cascade)),
 		edge.To("pending_auth_sessions", PendingAuthSession.Type),
+		edge.To("department", Department.Type).
+			Unique().
+			Required().
+			Field("department_id"),
 	}
 }
 
@@ -139,5 +147,6 @@ func (User) Indexes() []ent.Index {
 		// email 字段已在 Fields() 中声明 Unique()，无需重复索引
 		index.Fields("status"),
 		index.Fields("deleted_at"),
+		index.Fields("department_id"),
 	}
 }

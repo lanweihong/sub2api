@@ -17,6 +17,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitordailyrollup"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitorhistory"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitorrequesttemplate"
+	"github.com/Wei-Shaw/sub2api/ent/department"
 	"github.com/Wei-Shaw/sub2api/ent/errorpassthroughrule"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
@@ -725,6 +726,67 @@ func init() {
 	channelmonitorrequesttemplate.DefaultBodyOverrideMode = channelmonitorrequesttemplateDescBodyOverrideMode.Default.(string)
 	// channelmonitorrequesttemplate.BodyOverrideModeValidator is a validator for the "body_override_mode" field. It is called by the builders before save.
 	channelmonitorrequesttemplate.BodyOverrideModeValidator = channelmonitorrequesttemplateDescBodyOverrideMode.Validators[0].(func(string) error)
+	departmentMixin := schema.Department{}.Mixin()
+	departmentMixinHooks1 := departmentMixin[1].Hooks()
+	department.Hooks[0] = departmentMixinHooks1[0]
+	departmentMixinInters1 := departmentMixin[1].Interceptors()
+	department.Interceptors[0] = departmentMixinInters1[0]
+	departmentMixinFields0 := departmentMixin[0].Fields()
+	_ = departmentMixinFields0
+	departmentFields := schema.Department{}.Fields()
+	_ = departmentFields
+	// departmentDescCreatedAt is the schema descriptor for created_at field.
+	departmentDescCreatedAt := departmentMixinFields0[0].Descriptor()
+	// department.DefaultCreatedAt holds the default value on creation for the created_at field.
+	department.DefaultCreatedAt = departmentDescCreatedAt.Default.(func() time.Time)
+	// departmentDescUpdatedAt is the schema descriptor for updated_at field.
+	departmentDescUpdatedAt := departmentMixinFields0[1].Descriptor()
+	// department.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	department.DefaultUpdatedAt = departmentDescUpdatedAt.Default.(func() time.Time)
+	// department.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	department.UpdateDefaultUpdatedAt = departmentDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// departmentDescName is the schema descriptor for name field.
+	departmentDescName := departmentFields[0].Descriptor()
+	// department.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	department.NameValidator = func() func(string) error {
+		validators := departmentDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// departmentDescCode is the schema descriptor for code field.
+	departmentDescCode := departmentFields[1].Descriptor()
+	// department.DefaultCode holds the default value on creation for the code field.
+	department.DefaultCode = departmentDescCode.Default.(string)
+	// department.CodeValidator is a validator for the "code" field. It is called by the builders before save.
+	department.CodeValidator = departmentDescCode.Validators[0].(func(string) error)
+	// departmentDescDescription is the schema descriptor for description field.
+	departmentDescDescription := departmentFields[2].Descriptor()
+	// department.DefaultDescription holds the default value on creation for the description field.
+	department.DefaultDescription = departmentDescDescription.Default.(string)
+	// departmentDescSortOrder is the schema descriptor for sort_order field.
+	departmentDescSortOrder := departmentFields[4].Descriptor()
+	// department.DefaultSortOrder holds the default value on creation for the sort_order field.
+	department.DefaultSortOrder = departmentDescSortOrder.Default.(int)
+	// departmentDescStatus is the schema descriptor for status field.
+	departmentDescStatus := departmentFields[5].Descriptor()
+	// department.DefaultStatus holds the default value on creation for the status field.
+	department.DefaultStatus = departmentDescStatus.Default.(string)
+	// department.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	department.StatusValidator = departmentDescStatus.Validators[0].(func(string) error)
+	// departmentDescIsDefault is the schema descriptor for is_default field.
+	departmentDescIsDefault := departmentFields[6].Descriptor()
+	// department.DefaultIsDefault holds the default value on creation for the is_default field.
+	department.DefaultIsDefault = departmentDescIsDefault.Default.(bool)
 	errorpassthroughruleMixin := schema.ErrorPassthroughRule{}.Mixin()
 	errorpassthroughruleMixinFields0 := errorpassthroughruleMixin[0].Fields()
 	_ = errorpassthroughruleMixinFields0
