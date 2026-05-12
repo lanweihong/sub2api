@@ -3,7 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 import UsageView from '../UsageView.vue'
 
-const { list, getStats, getSnapshotV2, getById } = vi.hoisted(() => {
+const { list, getStats, getSnapshotV2, getModelStats, getCacheStats, getById } = vi.hoisted(() => {
   vi.stubGlobal('localStorage', {
     getItem: vi.fn(() => null),
     setItem: vi.fn(),
@@ -14,6 +14,8 @@ const { list, getStats, getSnapshotV2, getById } = vi.hoisted(() => {
     list: vi.fn(),
     getStats: vi.fn(),
     getSnapshotV2: vi.fn(),
+    getModelStats: vi.fn(),
+    getCacheStats: vi.fn(),
     getById: vi.fn(),
   }
 })
@@ -40,6 +42,8 @@ vi.mock('@/api/admin', () => ({
     },
     dashboard: {
       getSnapshotV2,
+      getModelStats,
+      getCacheStats,
     },
     users: {
       getById,
@@ -104,6 +108,28 @@ const GroupDistributionChartStub = {
     </div>
   `,
 }
+const CacheStatsChartStub = {
+  props: ['dimension', 'modelSource', 'endpointSource'],
+  emits: ['update:dimension', 'update:modelSource', 'update:endpointSource'],
+  template: '<div data-test="cache-stats-chart"></div>',
+}
+
+const emptyCacheStatsSummary = {
+  key: 'summary',
+  label: 'Summary',
+  requests: 0,
+  input_tokens: 0,
+  output_tokens: 0,
+  cache_creation_tokens: 0,
+  cache_read_tokens: 0,
+  total_tokens: 0,
+  cache_token_rate: 0,
+  cache_read_rate: 0,
+  cache_write_rate: 0,
+  cost: 0,
+  actual_cost: 0,
+  account_cost: 0,
+}
 
 describe('admin UsageView distribution metric toggles', () => {
   beforeEach(() => {
@@ -111,6 +137,8 @@ describe('admin UsageView distribution metric toggles', () => {
     list.mockReset()
     getStats.mockReset()
     getSnapshotV2.mockReset()
+    getModelStats.mockReset()
+    getCacheStats.mockReset()
     getById.mockReset()
 
     list.mockResolvedValue({
@@ -132,6 +160,18 @@ describe('admin UsageView distribution metric toggles', () => {
       trend: [],
       models: [],
       groups: [],
+    })
+    getModelStats.mockResolvedValue({
+      models: [],
+      start_date: '',
+      end_date: '',
+    })
+    getCacheStats.mockResolvedValue({
+      dimension: 'day',
+      model_source: 'requested',
+      endpoint_source: 'inbound',
+      items: [],
+      summary: emptyCacheStatsSummary,
     })
   })
 
@@ -157,6 +197,7 @@ describe('admin UsageView distribution metric toggles', () => {
           TokenUsageTrend: true,
           ModelDistributionChart: ModelDistributionChartStub,
           GroupDistributionChart: GroupDistributionChartStub,
+          CacheStatsChart: CacheStatsChartStub,
         },
       },
     })

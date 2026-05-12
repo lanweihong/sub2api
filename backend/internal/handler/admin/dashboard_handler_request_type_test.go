@@ -19,6 +19,7 @@ type dashboardUsageRepoCapture struct {
 	trendStream      *bool
 	modelRequestType *int16
 	modelStream      *bool
+	cacheQuery       usagestats.CacheStatsQuery
 	rankingLimit     int
 	ranking          []usagestats.UserSpendingRankingItem
 	rankingTotal     float64
@@ -52,6 +53,21 @@ func (s *dashboardUsageRepoCapture) GetModelStatsWithFilters(
 	return []usagestats.ModelStat{}, nil
 }
 
+func (s *dashboardUsageRepoCapture) GetCacheStatsWithFilters(
+	ctx context.Context,
+	query usagestats.CacheStatsQuery,
+) (*usagestats.CacheStatsResponse, error) {
+	s.cacheQuery = query
+	summary := usagestats.CacheStatsItem{Key: "summary", Label: "Summary"}
+	return &usagestats.CacheStatsResponse{
+		Dimension:      query.Dimension,
+		ModelSource:    query.ModelSource,
+		EndpointSource: query.EndpointSource,
+		Items:          []usagestats.CacheStatsItem{summary},
+		Summary:        summary,
+	}, nil
+}
+
 func (s *dashboardUsageRepoCapture) GetUserSpendingRanking(
 	ctx context.Context,
 	startTime, endTime time.Time,
@@ -73,6 +89,7 @@ func newDashboardRequestTypeTestRouter(repo *dashboardUsageRepoCapture) *gin.Eng
 	router := gin.New()
 	router.GET("/admin/dashboard/trend", handler.GetUsageTrend)
 	router.GET("/admin/dashboard/models", handler.GetModelStats)
+	router.GET("/admin/dashboard/cache-stats", handler.GetCacheStats)
 	router.GET("/admin/dashboard/users-ranking", handler.GetUserSpendingRanking)
 	return router
 }
@@ -169,6 +186,47 @@ func TestDashboardModelStatsValidModelSource(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestDashboardCacheStatsCapturesFiltersAndRequestTypePriority(t *testing.T) {
+	t.Cleanup(resetDashboardReadCachesForTest)
+	resetDashboardReadCachesForTest()
+
+	repo := &dashboardUsageRepoCapture{}
+	router := newDashboardRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/dashboard/cache-stats?dimension=endpoint&model_source=upstream&endpoint_source=upstream&user_id=7&api_key_id=8&account_id=9&group_id=10&model=claude-sonnet&request_type=ws_v2&stream=bad&billing_type=1&limit=500&timezone=UTC", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, usagestats.CacheStatsDimensionEndpoint, repo.cacheQuery.Dimension)
+	require.Equal(t, usagestats.ModelSourceUpstream, repo.cacheQuery.ModelSource)
+	require.Equal(t, usagestats.EndpointSourceUpstream, repo.cacheQuery.EndpointSource)
+	require.Equal(t, int64(7), repo.cacheQuery.UserID)
+	require.Equal(t, int64(8), repo.cacheQuery.APIKeyID)
+	require.Equal(t, int64(9), repo.cacheQuery.AccountID)
+	require.Equal(t, int64(10), repo.cacheQuery.GroupID)
+	require.Equal(t, "claude-sonnet", repo.cacheQuery.Model)
+	require.Equal(t, 200, repo.cacheQuery.Limit)
+	require.Equal(t, "UTC", repo.cacheQuery.Timezone)
+	require.NotNil(t, repo.cacheQuery.RequestType)
+	require.Equal(t, int16(service.RequestTypeWSV2), *repo.cacheQuery.RequestType)
+	require.Nil(t, repo.cacheQuery.Stream)
+	require.NotNil(t, repo.cacheQuery.BillingType)
+	require.Equal(t, int8(1), *repo.cacheQuery.BillingType)
+	require.Equal(t, "miss", rec.Header().Get("X-Snapshot-Cache"))
+}
+
+func TestDashboardCacheStatsRejectsInvalidDimension(t *testing.T) {
+	repo := &dashboardUsageRepoCapture{}
+	router := newDashboardRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/dashboard/cache-stats?dimension=bad", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
 func TestDashboardUsersRankingLimitAndCache(t *testing.T) {
