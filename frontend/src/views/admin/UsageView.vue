@@ -63,6 +63,14 @@
           />
           <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" />
         </div>
+        <CacheStatsChart
+          v-model:dimension="cacheStatsDimension"
+          v-model:model-source="cacheStatsModelSource"
+          v-model:endpoint-source="cacheStatsEndpointSource"
+          :items="cacheStatsItems"
+          :summary="cacheStatsSummary"
+          :loading="cacheStatsLoading"
+        />
       </div>
       <UsageFilters v-model="filters" :start-date="startDate" :end-date="endDate" :exporting="exporting" @change="applyFilters" @refresh="refreshData" @reset="resetFilters" @cleanup="openCleanupDialog" @export="exportToExcel">
         <template #after-reset>
@@ -154,8 +162,10 @@ import UsageDetailModal from '@/components/admin/usage/UsageDetailModal.vue'
 import UserBalanceHistoryModal from '@/components/admin/user/UserBalanceHistoryModal.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'; import GroupDistributionChart from '@/components/charts/GroupDistributionChart.vue'; import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import EndpointDistributionChart from '@/components/charts/EndpointDistributionChart.vue'
+import CacheStatsChart from '@/components/charts/CacheStatsChart.vue'
 import Icon from '@/components/icons/Icon.vue'
 import type { AdminUsageLog, TrendDataPoint, ModelStat, GroupStat, EndpointStat, AdminUser } from '@/types'; import type { AdminUsageStatsResponse, AdminUsageQueryParams } from '@/api/admin/usage'
+import type { CacheStatsDimension, CacheStatsEndpointSource, CacheStatsItem, CacheStatsModelSource } from '@/types/cacheStats'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -179,10 +189,17 @@ const inboundEndpointStats = ref<EndpointStat[]>([])
 const upstreamEndpointStats = ref<EndpointStat[]>([])
 const endpointPathStats = ref<EndpointStat[]>([])
 const endpointStatsLoading = ref(false)
+const cacheStatsItems = ref<CacheStatsItem[]>([])
+const cacheStatsSummary = ref<CacheStatsItem | null>(null)
+const cacheStatsDimension = ref<CacheStatsDimension>('day')
+const cacheStatsModelSource = ref<CacheStatsModelSource>('requested')
+const cacheStatsEndpointSource = ref<CacheStatsEndpointSource>('inbound')
+const cacheStatsLoading = ref(false)
 let abortController: AbortController | null = null; let exportAbortController: AbortController | null = null
 let chartReqSeq = 0
 let statsReqSeq = 0
 let modelStatsReqSeq = 0
+let cacheStatsReqSeq = 0
 const exportProgress = reactive({ show: false, progress: 0, current: 0, total: 0, estimatedTime: '' })
 const cleanupDialogVisible = ref(false)
 // Balance history modal state
@@ -345,6 +362,23 @@ const loadStats = async () => {
   }
 }
 
+const buildDashboardFilterParams = () => {
+  const requestType = filters.value.request_type
+  const legacyStream = requestType ? requestTypeToLegacyStream(requestType) : filters.value.stream
+  return {
+    start_date: filters.value.start_date || startDate.value,
+    end_date: filters.value.end_date || endDate.value,
+    user_id: filters.value.user_id,
+    model: filters.value.model,
+    api_key_id: filters.value.api_key_id,
+    account_id: filters.value.account_id,
+    group_id: filters.value.group_id,
+    request_type: requestType,
+    stream: legacyStream === null ? undefined : legacyStream,
+    billing_type: filters.value.billing_type
+  }
+}
+
 const resetModelStatsCache = () => {
   requestedModelStats.value = []
   upstreamModelStats.value = []
@@ -362,22 +396,7 @@ const loadModelStats = async (source: ModelDistributionSource, force = false) =>
   const seq = ++modelStatsReqSeq
   modelStatsLoading.value = true
   try {
-    const requestType = filters.value.request_type
-    const legacyStream = requestType ? requestTypeToLegacyStream(requestType) : filters.value.stream
-    const baseParams = {
-      start_date: filters.value.start_date || startDate.value,
-      end_date: filters.value.end_date || endDate.value,
-      user_id: filters.value.user_id,
-      model: filters.value.model,
-      api_key_id: filters.value.api_key_id,
-      account_id: filters.value.account_id,
-      group_id: filters.value.group_id,
-      request_type: requestType,
-      stream: legacyStream === null ? undefined : legacyStream,
-      billing_type: filters.value.billing_type,
-    }
-
-    const response = await adminAPI.dashboard.getModelStats({ ...baseParams, model_source: source })
+    const response = await adminAPI.dashboard.getModelStats({ ...buildDashboardFilterParams(), model_source: source })
 
     if (seq !== modelStatsReqSeq) return
 
@@ -410,20 +429,9 @@ const loadChartData = async () => {
   const seq = ++chartReqSeq
   chartsLoading.value = true
   try {
-    const requestType = filters.value.request_type
-    const legacyStream = requestType ? requestTypeToLegacyStream(requestType) : filters.value.stream
     const snapshot = await adminAPI.dashboard.getSnapshotV2({
-      start_date: filters.value.start_date || startDate.value,
-      end_date: filters.value.end_date || endDate.value,
+      ...buildDashboardFilterParams(),
       granularity: granularity.value,
-      user_id: filters.value.user_id,
-      model: filters.value.model,
-      api_key_id: filters.value.api_key_id,
-      account_id: filters.value.account_id,
-      group_id: filters.value.group_id,
-      request_type: requestType,
-      stream: legacyStream === null ? undefined : legacyStream,
-      billing_type: filters.value.billing_type,
       include_stats: false,
       include_trend: true,
       include_model_stats: false,
@@ -435,6 +443,32 @@ const loadChartData = async () => {
     groupStats.value = snapshot.groups || []
   } catch (error) { console.error('Failed to load chart data:', error) } finally { if (seq === chartReqSeq) chartsLoading.value = false }
 }
+
+const loadCacheStats = async () => {
+  const seq = ++cacheStatsReqSeq
+  cacheStatsLoading.value = true
+  try {
+    const response = await adminAPI.dashboard.getCacheStats({
+      ...buildDashboardFilterParams(),
+      dimension: cacheStatsDimension.value,
+      model_source: cacheStatsModelSource.value,
+      endpoint_source: cacheStatsEndpointSource.value,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      limit: 50
+    })
+    if (seq !== cacheStatsReqSeq) return
+    cacheStatsItems.value = response.items || []
+    cacheStatsSummary.value = response.summary || null
+  } catch (error) {
+    if (seq !== cacheStatsReqSeq) return
+    console.error('Failed to load cache stats:', error)
+    cacheStatsItems.value = []
+    cacheStatsSummary.value = null
+  } finally {
+    if (seq === cacheStatsReqSeq) cacheStatsLoading.value = false
+  }
+}
+
 const applyFilters = () => {
   pagination.page = 1
   resetModelStatsCache()
@@ -442,6 +476,7 @@ const applyFilters = () => {
   loadStats()
   loadModelStats(modelDistributionSource.value, true)
   loadChartData()
+  loadCacheStats()
 }
 const refreshData = () => {
   resetModelStatsCache()
@@ -449,6 +484,7 @@ const refreshData = () => {
   loadStats()
   loadModelStats(modelDistributionSource.value, true)
   loadChartData()
+  loadCacheStats()
 }
 const resetFilters = () => {
   const range = getLast24HoursRangeDates()
@@ -617,6 +653,7 @@ onMounted(() => {
   loadLogs()
   loadStats()
   loadModelStats(modelDistributionSource.value, true)
+  loadCacheStats()
   window.setTimeout(() => {
     void loadChartData()
   }, 120)
@@ -627,5 +664,9 @@ onUnmounted(() => { abortController?.abort(); exportAbortController?.abort(); do
 
 watch(modelDistributionSource, (source) => {
   void loadModelStats(source)
+})
+
+watch([cacheStatsDimension, cacheStatsModelSource, cacheStatsEndpointSource], () => {
+  void loadCacheStats()
 })
 </script>

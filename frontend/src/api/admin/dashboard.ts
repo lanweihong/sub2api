@@ -15,6 +15,12 @@ import type {
   UserBreakdownItem,
   UsageRequestType
 } from '@/types'
+import type {
+  CacheStatsDimension,
+  CacheStatsEndpointSource,
+  CacheStatsModelSource,
+  CacheStatsResponse
+} from '@/types/cacheStats'
 
 /**
  * Get dashboard statistics
@@ -155,6 +161,25 @@ export interface DashboardSnapshotV2Response {
  */
 export async function getGroupStats(params?: GroupStatsParams): Promise<GroupStatsResponse> {
   const { data } = await apiClient.get<GroupStatsResponse>('/admin/dashboard/groups', { params })
+  return data
+}
+
+export interface CacheStatsParams
+  extends Pick<
+    TrendParams,
+    'start_date' | 'end_date' | 'user_id' | 'api_key_id' | 'model' | 'account_id' | 'group_id' | 'request_type' | 'stream' | 'billing_type'
+  > {
+  dimension?: CacheStatsDimension
+  model_source?: CacheStatsModelSource
+  endpoint_source?: CacheStatsEndpointSource
+  timezone?: string
+  limit?: number
+}
+
+export async function getCacheStats(params?: CacheStatsParams): Promise<CacheStatsResponse> {
+  const { data } = await apiClient.get<CacheStatsResponse>('/admin/dashboard/cache-stats', {
+    params
+  })
   return data
 }
 
@@ -321,6 +346,7 @@ export const dashboardAPI = {
   getUsageTrend,
   getModelStats,
   getGroupStats,
+  getCacheStats,
   getSnapshotV2,
   getApiKeyUsageTrend,
   getUserUsageTrend,
