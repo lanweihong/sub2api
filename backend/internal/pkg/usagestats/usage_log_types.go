@@ -9,6 +9,23 @@ const (
 	ModelSourceMapping   = "mapping"
 )
 
+const (
+	CacheStatsDimensionSummary  = "summary"
+	CacheStatsDimensionUser     = "user"
+	CacheStatsDimensionAPIKey   = "api_key"
+	CacheStatsDimensionAccount  = "account"
+	CacheStatsDimensionGroup    = "group"
+	CacheStatsDimensionModel    = "model"
+	CacheStatsDimensionEndpoint = "endpoint"
+	CacheStatsDimensionDay      = "day"
+	CacheStatsDimensionHour     = "hour"
+)
+
+const (
+	EndpointSourceInbound  = "inbound"
+	EndpointSourceUpstream = "upstream"
+)
+
 func IsValidModelSource(source string) bool {
 	switch source {
 	case ModelSourceRequested, ModelSourceUpstream, ModelSourceMapping:
@@ -23,6 +40,46 @@ func NormalizeModelSource(source string) string {
 		return source
 	}
 	return ModelSourceRequested
+}
+
+func IsValidCacheStatsDimension(dimension string) bool {
+	switch dimension {
+	case CacheStatsDimensionSummary,
+		CacheStatsDimensionUser,
+		CacheStatsDimensionAPIKey,
+		CacheStatsDimensionAccount,
+		CacheStatsDimensionGroup,
+		CacheStatsDimensionModel,
+		CacheStatsDimensionEndpoint,
+		CacheStatsDimensionDay,
+		CacheStatsDimensionHour:
+		return true
+	default:
+		return false
+	}
+}
+
+func NormalizeCacheStatsDimension(dimension string) string {
+	if IsValidCacheStatsDimension(dimension) {
+		return dimension
+	}
+	return CacheStatsDimensionSummary
+}
+
+func IsValidEndpointSource(source string) bool {
+	switch source {
+	case EndpointSourceInbound, EndpointSourceUpstream:
+		return true
+	default:
+		return false
+	}
+}
+
+func NormalizeEndpointSource(source string) string {
+	if IsValidEndpointSource(source) {
+		return source
+	}
+	return EndpointSourceInbound
 }
 
 // DashboardStats 仪表盘统计
@@ -113,6 +170,62 @@ type EndpointStat struct {
 	TotalTokens int64   `json:"total_tokens"`
 	Cost        float64 `json:"cost"`        // 标准计费
 	ActualCost  float64 `json:"actual_cost"` // 实际扣除
+}
+
+type CacheStatsQuery struct {
+	StartTime      time.Time
+	EndTime        time.Time
+	Dimension      string
+	ModelSource    string
+	EndpointSource string
+	Timezone       string
+	Limit          int
+
+	UserID      int64
+	APIKeyID    int64
+	AccountID   int64
+	GroupID     int64
+	Model       string
+	RequestType *int16
+	Stream      *bool
+	BillingType *int8
+}
+
+type CacheStatsItem struct {
+	Key                 string  `json:"key"`
+	Label               string  `json:"label"`
+	Requests            int64   `json:"requests"`
+	InputTokens         int64   `json:"input_tokens"`
+	OutputTokens        int64   `json:"output_tokens"`
+	CacheCreationTokens int64   `json:"cache_creation_tokens"`
+	CacheReadTokens     int64   `json:"cache_read_tokens"`
+	TotalTokens         int64   `json:"total_tokens"`
+	CacheTokenRate      float64 `json:"cache_token_rate"`
+	CacheReadRate       float64 `json:"cache_read_rate"`
+	CacheWriteRate      float64 `json:"cache_write_rate"`
+	Cost                float64 `json:"cost"`
+	ActualCost          float64 `json:"actual_cost"`
+	AccountCost         float64 `json:"account_cost"`
+}
+
+type CacheStatsResponse struct {
+	Dimension      string           `json:"dimension"`
+	ModelSource    string           `json:"model_source,omitempty"`
+	EndpointSource string           `json:"endpoint_source,omitempty"`
+	Items          []CacheStatsItem `json:"items"`
+	Summary        CacheStatsItem   `json:"summary"`
+}
+
+func (i *CacheStatsItem) CalculateRates() {
+	i.TotalTokens = i.InputTokens + i.OutputTokens + i.CacheCreationTokens + i.CacheReadTokens
+	if i.TotalTokens > 0 {
+		i.CacheTokenRate = float64(i.CacheCreationTokens+i.CacheReadTokens) / float64(i.TotalTokens)
+		i.CacheWriteRate = float64(i.CacheCreationTokens) / float64(i.TotalTokens)
+	}
+	readDenominator := i.InputTokens + i.CacheReadTokens
+	if readDenominator > 0 {
+		i.CacheReadRate = float64(i.CacheReadTokens) / float64(readDenominator)
+	}
 }
 
 // GroupUsageSummary represents today's and cumulative cost for a single group.

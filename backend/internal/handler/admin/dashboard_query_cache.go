@@ -13,6 +13,7 @@ var (
 	dashboardTrendCache        = newSnapshotCache(30 * time.Second)
 	dashboardModelStatsCache   = newSnapshotCache(30 * time.Second)
 	dashboardGroupStatsCache   = newSnapshotCache(30 * time.Second)
+	dashboardCacheStatsCache   = newSnapshotCache(30 * time.Second)
 	dashboardUsersTrendCache   = newSnapshotCache(30 * time.Second)
 	dashboardAPIKeysTrendCache = newSnapshotCache(30 * time.Second)
 )
@@ -49,6 +50,24 @@ type dashboardEntityTrendCacheKey struct {
 	EndTime     string `json:"end_time"`
 	Granularity string `json:"granularity"`
 	Limit       int    `json:"limit"`
+}
+
+type dashboardCacheStatsCacheKey struct {
+	StartTime      string `json:"start_time"`
+	EndTime        string `json:"end_time"`
+	Dimension      string `json:"dimension"`
+	ModelSource    string `json:"model_source"`
+	EndpointSource string `json:"endpoint_source"`
+	Timezone       string `json:"timezone"`
+	Limit          int    `json:"limit"`
+	UserID         int64  `json:"user_id"`
+	APIKeyID       int64  `json:"api_key_id"`
+	AccountID      int64  `json:"account_id"`
+	GroupID        int64  `json:"group_id"`
+	Model          string `json:"model"`
+	RequestType    *int16 `json:"request_type"`
+	Stream         *bool  `json:"stream"`
+	BillingType    *int8  `json:"billing_type"`
 }
 
 func cacheStatusValue(hit bool) string {
@@ -165,6 +184,37 @@ func (h *DashboardHandler) getGroupStatsCached(
 		return nil, hit, err
 	}
 	stats, err := snapshotPayloadAs[[]usagestats.GroupStat](entry.Payload)
+	return stats, hit, err
+}
+
+func (h *DashboardHandler) getCacheStatsCached(ctx context.Context, query usagestats.CacheStatsQuery) (*usagestats.CacheStatsResponse, bool, error) {
+	query.Dimension = usagestats.NormalizeCacheStatsDimension(query.Dimension)
+	query.ModelSource = usagestats.NormalizeModelSource(query.ModelSource)
+	query.EndpointSource = usagestats.NormalizeEndpointSource(query.EndpointSource)
+	key := mustMarshalDashboardCacheKey(dashboardCacheStatsCacheKey{
+		StartTime:      query.StartTime.UTC().Format(time.RFC3339),
+		EndTime:        query.EndTime.UTC().Format(time.RFC3339),
+		Dimension:      query.Dimension,
+		ModelSource:    query.ModelSource,
+		EndpointSource: query.EndpointSource,
+		Timezone:       query.Timezone,
+		Limit:          query.Limit,
+		UserID:         query.UserID,
+		APIKeyID:       query.APIKeyID,
+		AccountID:      query.AccountID,
+		GroupID:        query.GroupID,
+		Model:          query.Model,
+		RequestType:    query.RequestType,
+		Stream:         query.Stream,
+		BillingType:    query.BillingType,
+	})
+	entry, hit, err := dashboardCacheStatsCache.GetOrLoad(key, func() (any, error) {
+		return h.dashboardService.GetCacheStatsWithFilters(ctx, query)
+	})
+	if err != nil {
+		return nil, hit, err
+	}
+	stats, err := snapshotPayloadAs[*usagestats.CacheStatsResponse](entry.Payload)
 	return stats, hit, err
 }
 

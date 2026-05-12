@@ -416,6 +416,126 @@ func (h *DashboardHandler) GetGroupStats(c *gin.Context) {
 	})
 }
 
+// GetCacheStats handles getting cache-token rate statistics.
+// GET /api/v1/admin/dashboard/cache-stats
+func (h *DashboardHandler) GetCacheStats(c *gin.Context) {
+	startTime, endTime := parseTimeRange(c)
+	dimension := strings.TrimSpace(c.DefaultQuery("dimension", usagestats.CacheStatsDimensionSummary))
+	if !usagestats.IsValidCacheStatsDimension(dimension) {
+		response.BadRequest(c, "Invalid dimension, use summary/user/api_key/account/group/model/endpoint/day/hour")
+		return
+	}
+	modelSource := strings.TrimSpace(c.DefaultQuery("model_source", usagestats.ModelSourceRequested))
+	if !usagestats.IsValidModelSource(modelSource) {
+		response.BadRequest(c, "Invalid model_source, use requested/upstream/mapping")
+		return
+	}
+	endpointSource := strings.TrimSpace(c.DefaultQuery("endpoint_source", usagestats.EndpointSourceInbound))
+	if !usagestats.IsValidEndpointSource(endpointSource) {
+		response.BadRequest(c, "Invalid endpoint_source, use inbound/upstream")
+		return
+	}
+
+	query := usagestats.CacheStatsQuery{
+		StartTime:      startTime,
+		EndTime:        endTime,
+		Dimension:      dimension,
+		ModelSource:    modelSource,
+		EndpointSource: endpointSource,
+		Timezone:       strings.TrimSpace(c.Query("timezone")),
+		Model:          strings.TrimSpace(c.Query("model")),
+		Limit:          50,
+	}
+	if query.Timezone == "" {
+		query.Timezone = timezone.Name()
+	}
+	if limitStr := strings.TrimSpace(c.Query("limit")); limitStr != "" {
+		limit, err := strconv.Atoi(limitStr)
+		if err != nil || limit <= 0 {
+			response.BadRequest(c, "Invalid limit")
+			return
+		}
+		if limit > 200 {
+			limit = 200
+		}
+		query.Limit = limit
+	}
+
+	if userIDStr := strings.TrimSpace(c.Query("user_id")); userIDStr != "" {
+		id, err := strconv.ParseInt(userIDStr, 10, 64)
+		if err != nil {
+			response.BadRequest(c, "Invalid user_id")
+			return
+		}
+		query.UserID = id
+	}
+	if apiKeyIDStr := strings.TrimSpace(c.Query("api_key_id")); apiKeyIDStr != "" {
+		id, err := strconv.ParseInt(apiKeyIDStr, 10, 64)
+		if err != nil {
+			response.BadRequest(c, "Invalid api_key_id")
+			return
+		}
+		query.APIKeyID = id
+	}
+	if accountIDStr := strings.TrimSpace(c.Query("account_id")); accountIDStr != "" {
+		id, err := strconv.ParseInt(accountIDStr, 10, 64)
+		if err != nil {
+			response.BadRequest(c, "Invalid account_id")
+			return
+		}
+		query.AccountID = id
+	}
+	if groupIDStr := strings.TrimSpace(c.Query("group_id")); groupIDStr != "" {
+		id, err := strconv.ParseInt(groupIDStr, 10, 64)
+		if err != nil {
+			response.BadRequest(c, "Invalid group_id")
+			return
+		}
+		query.GroupID = id
+	}
+	if requestTypeStr := strings.TrimSpace(c.Query("request_type")); requestTypeStr != "" {
+		parsed, err := service.ParseUsageRequestType(requestTypeStr)
+		if err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		value := int16(parsed)
+		query.RequestType = &value
+	} else if streamStr := strings.TrimSpace(c.Query("stream")); streamStr != "" {
+		streamVal, err := strconv.ParseBool(streamStr)
+		if err != nil {
+			response.BadRequest(c, "Invalid stream value, use true or false")
+			return
+		}
+		query.Stream = &streamVal
+	}
+	if billingTypeStr := strings.TrimSpace(c.Query("billing_type")); billingTypeStr != "" {
+		v, err := strconv.ParseInt(billingTypeStr, 10, 8)
+		if err != nil {
+			response.BadRequest(c, "Invalid billing_type")
+			return
+		}
+		bt := int8(v)
+		query.BillingType = &bt
+	}
+
+	stats, hit, err := h.getCacheStatsCached(c.Request.Context(), query)
+	if err != nil {
+		response.Error(c, 500, "Failed to get cache statistics")
+		return
+	}
+	c.Header("X-Snapshot-Cache", cacheStatusValue(hit))
+	response.Success(c, gin.H{
+		"dimension":       stats.Dimension,
+		"model_source":    stats.ModelSource,
+		"endpoint_source": stats.EndpointSource,
+		"items":           stats.Items,
+		"summary":         stats.Summary,
+		"start_date":      startTime.Format("2006-01-02"),
+		"end_date":        endTime.Add(-24 * time.Hour).Format("2006-01-02"),
+	})
+}
+
 // GetAPIKeyUsageTrend handles getting API key usage trend data
 // GET /api/v1/admin/dashboard/api-keys-trend
 // Query params: start_date, end_date (YYYY-MM-DD), granularity (day/hour), limit (default 5)

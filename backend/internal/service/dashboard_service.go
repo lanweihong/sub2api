@@ -169,6 +169,22 @@ func (s *DashboardService) GetGroupStatsWithFilters(ctx context.Context, startTi
 	return stats, nil
 }
 
+type cacheStatsRepository interface {
+	GetCacheStatsWithFilters(ctx context.Context, query usagestats.CacheStatsQuery) (*usagestats.CacheStatsResponse, error)
+}
+
+func (s *DashboardService) GetCacheStatsWithFilters(ctx context.Context, query usagestats.CacheStatsQuery) (*usagestats.CacheStatsResponse, error) {
+	repo, ok := s.usageRepo.(cacheStatsRepository)
+	if !ok {
+		return nil, errors.New("cache stats repository not available")
+	}
+	stats, err := repo.GetCacheStatsWithFilters(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("get cache stats with filters: %w", err)
+	}
+	return stats, nil
+}
+
 // GetGroupUsageSummary returns today's and cumulative cost for all groups.
 func (s *DashboardService) GetGroupUsageSummary(ctx context.Context, todayStart time.Time) ([]usagestats.GroupUsageSummary, error) {
 	results, err := s.usageRepo.GetAllGroupUsageSummary(ctx, todayStart)

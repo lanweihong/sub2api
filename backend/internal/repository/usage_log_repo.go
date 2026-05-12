@@ -3659,6 +3659,450 @@ func (r *usageLogRepository) getEndpointPathStatsWithFilters(ctx context.Context
 	return results, nil
 }
 
+type cacheStatsDimensionSQL struct {
+	keyExpr   string
+	labelExpr string
+	joinSQL   string
+	orderSQL  string
+	limit     bool
+}
+
+func resolveAliasedModelDimensionExpression(modelType, alias string) string {
+	requestedExpr := fmt.Sprintf("COALESCE(NULLIF(TRIM(%s.requested_model), ''), %s.model)", alias, alias)
+	switch usagestats.NormalizeModelSource(modelType) {
+	case usagestats.ModelSourceUpstream:
+		return fmt.Sprintf("COALESCE(NULLIF(TRIM(%s.upstream_model), ''), %s)", alias, requestedExpr)
+	case usagestats.ModelSourceMapping:
+		return fmt.Sprintf("(%s || ' -> ' || COALESCE(NULLIF(TRIM(%s.upstream_model), ''), %s))", requestedExpr, alias, requestedExpr)
+	default:
+		return requestedExpr
+	}
+}
+
+func resolveCacheStatsDimensionSQL(query usagestats.CacheStatsQuery, tzArgIndex int) cacheStatsDimensionSQL {
+	switch usagestats.NormalizeCacheStatsDimension(query.Dimension) {
+	case usagestats.CacheStatsDimensionUser:
+		return cacheStatsDimensionSQL{
+			keyExpr:   "ul.user_id::text",
+			labelExpr: "COALESCE(NULLIF(TRIM(u.email), ''), 'user #' || ul.user_id::text)",
+			joinSQL:   "LEFT JOIN users u ON u.id = ul.user_id",
+			orderSQL:  "COALESCE(SUM(ul.cache_read_tokens), 0) DESC, COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0) DESC",
+			limit:     true,
+		}
+	case usagestats.CacheStatsDimensionAPIKey:
+		return cacheStatsDimensionSQL{
+			keyExpr:   "ul.api_key_id::text",
+			labelExpr: "COALESCE(NULLIF(TRIM(ak.name), ''), 'api key #' || ul.api_key_id::text)",
+			joinSQL:   "LEFT JOIN api_keys ak ON ak.id = ul.api_key_id",
+			orderSQL:  "COALESCE(SUM(ul.cache_read_tokens), 0) DESC, COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0) DESC",
+			limit:     true,
+		}
+	case usagestats.CacheStatsDimensionAccount:
+		return cacheStatsDimensionSQL{
+			keyExpr:   "ul.account_id::text",
+			labelExpr: "COALESCE(NULLIF(TRIM(a.name), ''), 'account #' || ul.account_id::text)",
+			joinSQL:   "LEFT JOIN accounts a ON a.id = ul.account_id",
+			orderSQL:  "COALESCE(SUM(ul.cache_read_tokens), 0) DESC, COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0) DESC",
+			limit:     true,
+		}
+	case usagestats.CacheStatsDimensionGroup:
+		return cacheStatsDimensionSQL{
+			keyExpr:   "COALESCE(ul.group_id, 0)::text",
+			labelExpr: "COALESCE(NULLIF(TRIM(g.name), ''), CASE WHEN ul.group_id IS NULL THEN 'Ungrouped' ELSE 'group #' || ul.group_id::text END)",
+			joinSQL:   "LEFT JOIN groups g ON g.id = ul.group_id",
+			orderSQL:  "COALESCE(SUM(ul.cache_read_tokens), 0) DESC, COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0) DESC",
+			limit:     true,
+		}
+	case usagestats.CacheStatsDimensionModel:
+		modelExpr := resolveAliasedModelDimensionExpression(query.ModelSource, "ul")
+		return cacheStatsDimensionSQL{
+			keyExpr:   fmt.Sprintf("COALESCE(NULLIF(TRIM(%s), ''), 'unknown')", modelExpr),
+			labelExpr: fmt.Sprintf("COALESCE(NULLIF(TRIM(%s), ''), 'unknown')", modelExpr),
+			orderSQL:  "COALESCE(SUM(ul.cache_read_tokens), 0) DESC, COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0) DESC",
+			limit:     true,
+		}
+	case usagestats.CacheStatsDimensionEndpoint:
+		endpointColumn := "ul.inbound_endpoint"
+		if usagestats.NormalizeEndpointSource(query.EndpointSource) == usagestats.EndpointSourceUpstream {
+			endpointColumn = "ul.upstream_endpoint"
+		}
+		return cacheStatsDimensionSQL{
+			keyExpr:   fmt.Sprintf("COALESCE(NULLIF(TRIM(%s), ''), 'unknown')", endpointColumn),
+			labelExpr: fmt.Sprintf("COALESCE(NULLIF(TRIM(%s), ''), 'unknown')", endpointColumn),
+			orderSQL:  "COALESCE(SUM(ul.cache_read_tokens), 0) DESC, COALESCE(SUM(ul.input_tokens + ul.output_tokens + ul.cache_creation_tokens + ul.cache_read_tokens), 0) DESC",
+			limit:     true,
+		}
+	case usagestats.CacheStatsDimensionHour:
+		expr := fmt.Sprintf("TO_CHAR(date_trunc('hour', ul.created_at AT TIME ZONE $%d), 'YYYY-MM-DD HH24:00')", tzArgIndex)
+		return cacheStatsDimensionSQL{
+			keyExpr:   expr,
+			labelExpr: expr,
+			orderSQL:  "key ASC",
+		}
+	case usagestats.CacheStatsDimensionDay:
+		expr := fmt.Sprintf("TO_CHAR(date_trunc('day', ul.created_at AT TIME ZONE $%d), 'YYYY-MM-DD')", tzArgIndex)
+		return cacheStatsDimensionSQL{
+			keyExpr:   expr,
+			labelExpr: expr,
+			orderSQL:  "key ASC",
+		}
+	default:
+		return cacheStatsDimensionSQL{
+			keyExpr:   "'summary'",
+			labelExpr: "'Summary'",
+			orderSQL:  "key ASC",
+		}
+	}
+}
+
+func appendCacheStatsFilters(sqlText string, args []any, query usagestats.CacheStatsQuery) (string, []any) {
+	if query.UserID > 0 {
+		sqlText += fmt.Sprintf(" AND ul.user_id = $%d", len(args)+1)
+		args = append(args, query.UserID)
+	}
+	if query.APIKeyID > 0 {
+		sqlText += fmt.Sprintf(" AND ul.api_key_id = $%d", len(args)+1)
+		args = append(args, query.APIKeyID)
+	}
+	if query.AccountID > 0 {
+		sqlText += fmt.Sprintf(" AND ul.account_id = $%d", len(args)+1)
+		args = append(args, query.AccountID)
+	}
+	if query.GroupID > 0 {
+		sqlText += fmt.Sprintf(" AND ul.group_id = $%d", len(args)+1)
+		args = append(args, query.GroupID)
+	}
+	if strings.TrimSpace(query.Model) != "" {
+		sqlText += fmt.Sprintf(" AND ul.%s = $%d", rawUsageLogModelColumn, len(args)+1)
+		args = append(args, query.Model)
+	}
+	if query.RequestType != nil {
+		condition, conditionArgs := buildRequestTypeFilterCondition(len(args)+1, *query.RequestType)
+		condition = strings.NewReplacer(
+			"request_type", "ul.request_type",
+			"openai_ws_mode", "ul.openai_ws_mode",
+			"stream", "ul.stream",
+		).Replace(condition)
+		sqlText += " AND " + condition
+		args = append(args, conditionArgs...)
+	} else if query.Stream != nil {
+		sqlText += fmt.Sprintf(" AND ul.stream = $%d", len(args)+1)
+		args = append(args, *query.Stream)
+	}
+	if query.BillingType != nil {
+		sqlText += fmt.Sprintf(" AND ul.billing_type = $%d", len(args)+1)
+		args = append(args, int16(*query.BillingType))
+	}
+	return sqlText, args
+}
+
+func scanCacheStatsItem(scanner interface {
+	Scan(dest ...any) error
+}, item *usagestats.CacheStatsItem) error {
+	if err := scanner.Scan(
+		&item.Key,
+		&item.Label,
+		&item.Requests,
+		&item.InputTokens,
+		&item.OutputTokens,
+		&item.CacheCreationTokens,
+		&item.CacheReadTokens,
+		&item.Cost,
+		&item.ActualCost,
+		&item.AccountCost,
+	); err != nil {
+		return err
+	}
+	item.CalculateRates()
+	return nil
+}
+
+func cacheStatsHasFilters(query usagestats.CacheStatsQuery) bool {
+	return query.UserID > 0 ||
+		query.APIKeyID > 0 ||
+		query.AccountID > 0 ||
+		query.GroupID > 0 ||
+		strings.TrimSpace(query.Model) != "" ||
+		query.RequestType != nil ||
+		query.Stream != nil ||
+		query.BillingType != nil
+}
+
+func shouldUsePreaggregatedCacheStats(query usagestats.CacheStatsQuery) bool {
+	if cacheStatsHasFilters(query) {
+		return false
+	}
+	switch usagestats.NormalizeCacheStatsDimension(query.Dimension) {
+	case usagestats.CacheStatsDimensionSummary,
+		usagestats.CacheStatsDimensionDay,
+		usagestats.CacheStatsDimensionHour:
+		return true
+	default:
+		return false
+	}
+}
+
+func (r *usageLogRepository) getCacheStatsSummaryFromAggregates(ctx context.Context, query usagestats.CacheStatsQuery) (usagestats.CacheStatsItem, error) {
+	table := "usage_dashboard_daily"
+	where := "bucket_date >= $1::date AND bucket_date < $2::date"
+	if query.Dimension == usagestats.CacheStatsDimensionHour {
+		table = "usage_dashboard_hourly"
+		where = "bucket_start >= $1 AND bucket_start < $2"
+	}
+
+	sqlText := fmt.Sprintf(`
+		SELECT
+			'summary' AS key,
+			'Summary' AS label,
+			COALESCE(SUM(total_requests), 0) AS requests,
+			COALESCE(SUM(input_tokens), 0) AS input_tokens,
+			COALESCE(SUM(output_tokens), 0) AS output_tokens,
+			COALESCE(SUM(cache_creation_tokens), 0) AS cache_creation_tokens,
+			COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens,
+			COALESCE(SUM(total_cost), 0) AS cost,
+			COALESCE(SUM(actual_cost), 0) AS actual_cost,
+			COALESCE(SUM(account_cost), 0) AS account_cost
+		FROM %s
+		WHERE %s
+	`, table, where)
+
+	var summary usagestats.CacheStatsItem
+	if err := scanSingleRow(
+		ctx,
+		r.sql,
+		sqlText,
+		[]any{query.StartTime, query.EndTime},
+		&summary.Key,
+		&summary.Label,
+		&summary.Requests,
+		&summary.InputTokens,
+		&summary.OutputTokens,
+		&summary.CacheCreationTokens,
+		&summary.CacheReadTokens,
+		&summary.Cost,
+		&summary.ActualCost,
+		&summary.AccountCost,
+	); err != nil {
+		return usagestats.CacheStatsItem{}, err
+	}
+	summary.CalculateRates()
+	return summary, nil
+}
+
+func (r *usageLogRepository) getCacheStatsFromAggregates(ctx context.Context, query usagestats.CacheStatsQuery) (*usagestats.CacheStatsResponse, bool, error) {
+	summary, err := r.getCacheStatsSummaryFromAggregates(ctx, query)
+	if err != nil {
+		return nil, false, err
+	}
+	if summary.Requests == 0 {
+		return nil, false, nil
+	}
+
+	resp := &usagestats.CacheStatsResponse{
+		Dimension:      query.Dimension,
+		ModelSource:    query.ModelSource,
+		EndpointSource: query.EndpointSource,
+		Summary:        summary,
+		Items:          []usagestats.CacheStatsItem{},
+	}
+	if query.Dimension == usagestats.CacheStatsDimensionSummary {
+		resp.Items = append(resp.Items, summary)
+		return resp, true, nil
+	}
+
+	var sqlText string
+	args := []any{query.StartTime, query.EndTime}
+	switch query.Dimension {
+	case usagestats.CacheStatsDimensionHour:
+		args = append(args, query.Timezone)
+		sqlText = `
+			SELECT
+				TO_CHAR(bucket_start AT TIME ZONE $3, 'YYYY-MM-DD HH24:00') AS key,
+				TO_CHAR(bucket_start AT TIME ZONE $3, 'YYYY-MM-DD HH24:00') AS label,
+				total_requests AS requests,
+				input_tokens,
+				output_tokens,
+				cache_creation_tokens,
+				cache_read_tokens,
+				total_cost AS cost,
+				actual_cost,
+				account_cost
+			FROM usage_dashboard_hourly
+			WHERE bucket_start >= $1 AND bucket_start < $2
+			ORDER BY bucket_start ASC
+		`
+	case usagestats.CacheStatsDimensionDay:
+		sqlText = `
+			SELECT
+				bucket_date::text AS key,
+				bucket_date::text AS label,
+				total_requests AS requests,
+				input_tokens,
+				output_tokens,
+				cache_creation_tokens,
+				cache_read_tokens,
+				total_cost AS cost,
+				actual_cost,
+				account_cost
+			FROM usage_dashboard_daily
+			WHERE bucket_date >= $1::date AND bucket_date < $2::date
+			ORDER BY bucket_date ASC
+		`
+	default:
+		return nil, false, nil
+	}
+
+	rows, err := r.sql.QueryContext(ctx, sqlText, args...)
+	if err != nil {
+		return nil, false, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var item usagestats.CacheStatsItem
+		if err := scanCacheStatsItem(rows, &item); err != nil {
+			return nil, false, err
+		}
+		resp.Items = append(resp.Items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	return resp, len(resp.Items) > 0, nil
+}
+
+func (r *usageLogRepository) getCacheStatsSummary(ctx context.Context, query usagestats.CacheStatsQuery) (usagestats.CacheStatsItem, error) {
+	sqlText := `
+		SELECT
+			'summary' AS key,
+			'Summary' AS label,
+			COUNT(*) AS requests,
+			COALESCE(SUM(ul.input_tokens), 0) AS input_tokens,
+			COALESCE(SUM(ul.output_tokens), 0) AS output_tokens,
+			COALESCE(SUM(ul.cache_creation_tokens), 0) AS cache_creation_tokens,
+			COALESCE(SUM(ul.cache_read_tokens), 0) AS cache_read_tokens,
+			COALESCE(SUM(ul.total_cost), 0) AS cost,
+			COALESCE(SUM(ul.actual_cost), 0) AS actual_cost,
+			COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1)), 0) AS account_cost
+		FROM usage_logs ul
+		WHERE ul.created_at >= $1 AND ul.created_at < $2
+	`
+	args := []any{query.StartTime, query.EndTime}
+	sqlText, args = appendCacheStatsFilters(sqlText, args, query)
+
+	var summary usagestats.CacheStatsItem
+	if err := scanSingleRow(
+		ctx,
+		r.sql,
+		sqlText,
+		args,
+		&summary.Key,
+		&summary.Label,
+		&summary.Requests,
+		&summary.InputTokens,
+		&summary.OutputTokens,
+		&summary.CacheCreationTokens,
+		&summary.CacheReadTokens,
+		&summary.Cost,
+		&summary.ActualCost,
+		&summary.AccountCost,
+	); err != nil {
+		return usagestats.CacheStatsItem{}, err
+	}
+	summary.CalculateRates()
+	return summary, nil
+}
+
+// GetCacheStatsWithFilters returns cache-token statistics grouped by a safe, whitelisted dimension.
+func (r *usageLogRepository) GetCacheStatsWithFilters(ctx context.Context, query usagestats.CacheStatsQuery) (*usagestats.CacheStatsResponse, error) {
+	query.Dimension = usagestats.NormalizeCacheStatsDimension(query.Dimension)
+	query.ModelSource = usagestats.NormalizeModelSource(query.ModelSource)
+	query.EndpointSource = usagestats.NormalizeEndpointSource(query.EndpointSource)
+	if query.Timezone == "" {
+		query.Timezone = resolveUsageStatsTimezone()
+	} else if _, err := time.LoadLocation(query.Timezone); err != nil {
+		query.Timezone = resolveUsageStatsTimezone()
+	}
+	if query.Limit <= 0 {
+		query.Limit = 50
+	}
+	if query.Limit > 200 {
+		query.Limit = 200
+	}
+
+	if shouldUsePreaggregatedCacheStats(query) {
+		if resp, ok, err := r.getCacheStatsFromAggregates(ctx, query); err != nil {
+			return nil, err
+		} else if ok {
+			return resp, nil
+		}
+	}
+
+	summary, err := r.getCacheStatsSummary(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	resp := &usagestats.CacheStatsResponse{
+		Dimension:      query.Dimension,
+		ModelSource:    query.ModelSource,
+		EndpointSource: query.EndpointSource,
+		Summary:        summary,
+		Items:          []usagestats.CacheStatsItem{},
+	}
+	if query.Dimension == usagestats.CacheStatsDimensionSummary {
+		resp.Items = append(resp.Items, summary)
+		return resp, nil
+	}
+
+	args := []any{query.StartTime, query.EndTime}
+	if query.Dimension == usagestats.CacheStatsDimensionDay || query.Dimension == usagestats.CacheStatsDimensionHour {
+		args = append(args, query.Timezone)
+	}
+	dim := resolveCacheStatsDimensionSQL(query, len(args))
+	sqlText := fmt.Sprintf(`
+		SELECT
+			%s AS key,
+			%s AS label,
+			COUNT(*) AS requests,
+			COALESCE(SUM(ul.input_tokens), 0) AS input_tokens,
+			COALESCE(SUM(ul.output_tokens), 0) AS output_tokens,
+			COALESCE(SUM(ul.cache_creation_tokens), 0) AS cache_creation_tokens,
+			COALESCE(SUM(ul.cache_read_tokens), 0) AS cache_read_tokens,
+			COALESCE(SUM(ul.total_cost), 0) AS cost,
+			COALESCE(SUM(ul.actual_cost), 0) AS actual_cost,
+			COALESCE(SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1)), 0) AS account_cost
+		FROM usage_logs ul
+		%s
+		WHERE ul.created_at >= $1 AND ul.created_at < $2
+	`, dim.keyExpr, dim.labelExpr, dim.joinSQL)
+	sqlText, args = appendCacheStatsFilters(sqlText, args, query)
+	sqlText += " GROUP BY 1, 2"
+	if dim.orderSQL != "" {
+		sqlText += " ORDER BY " + dim.orderSQL
+	}
+	if dim.limit {
+		sqlText += fmt.Sprintf(" LIMIT %d", query.Limit)
+	}
+
+	rows, err := r.sql.QueryContext(ctx, sqlText, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var item usagestats.CacheStatsItem
+		if err := scanCacheStatsItem(rows, &item); err != nil {
+			return nil, err
+		}
+		resp.Items = append(resp.Items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
 // GetEndpointStatsWithFilters returns inbound endpoint statistics with optional filters.
 func (r *usageLogRepository) GetEndpointStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8) ([]EndpointStat, error) {
 	return r.getEndpointStatsByColumnWithFilters(ctx, "inbound_endpoint", startTime, endTime, userID, apiKeyID, accountID, groupID, model, requestType, stream, billingType)
