@@ -3332,7 +3332,7 @@
 import { adminAPI } from '@/api/admin'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
-import { applyInterceptWarmup } from '@/components/account/credentialsBuilder'
+import { applyAntigravityProjectID, applyInterceptWarmup } from '@/components/account/credentialsBuilder'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
@@ -3347,6 +3347,7 @@ import {
 } from '@/composables/useAccountOAuth'
 import { useAntigravityOAuth } from '@/composables/useAntigravityOAuth'
 import { useGeminiOAuth } from '@/composables/useGeminiOAuth'
+import { useGrokOAuth } from '@/composables/useGrokOAuth'
 import {
   buildModelMappingObject,
   claudeModels,
@@ -3364,7 +3365,10 @@ import type {
   AccountType,
   AdminGroup,
   CheckMixedChannelResponse,
+  CodexSessionImportMessage,
   CreateAccountRequest,
+  OpenAIEndpointCapability,
+  OpenAIResponsesMode,
   Proxy,
   OpenAICompactMode
 } from '@/types'

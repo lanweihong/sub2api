@@ -3080,6 +3080,16 @@ import {
   resetMessagesDispatchFormState,
   type MessagesDispatchMappingRow,
 } from './groupsMessagesDispatch'
+import {
+  buildModelsListConfig,
+  createModelsListState as createInitialModelsListState,
+  invertModelsListSelection,
+  moveModelsListItem,
+  selectAllModelsListItems,
+  setModelsListCandidates,
+} from './groupsModelsList'
+import { createModelsListCandidatesTracker } from './groupsModelsListCandidates'
+import { normalizeSupportedModelScopesForPlatform } from './groupsSupportedModelScopes'
 
 const { t } = useI18n();
 const appStore = useAppStore();

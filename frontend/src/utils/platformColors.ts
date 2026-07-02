@@ -7,7 +7,7 @@
 
 import { isAnthropicCompatPlatform } from '@/utils/accountBaseUrl'
 
-export type Platform = 'anthropic' | 'openai' | 'antigravity' | 'gemini'
+export type Platform = 'anthropic' | 'openai' | 'antigravity' | 'gemini' | 'grok'
 
 // ── Badge (bg + text + border, for inline badges with border) ───────
 const BADGE: Record<Platform, string> = {

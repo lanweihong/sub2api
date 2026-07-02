@@ -245,7 +245,10 @@ import MonitorAdvancedRequestConfig from '@/components/admin/monitor/MonitorAdva
 import MonitorTemplateApplyPickerDialog from '@/components/admin/monitor/MonitorTemplateApplyPickerDialog.vue'
 import { useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
 import {
+  API_MODE_CHAT_COMPLETIONS,
+  API_MODE_RESPONSES,
   PROVIDER_ANTHROPIC,
+  PROVIDER_OPENAI,
   PROVIDERS,
 } from '@/constants/channelMonitor'
 

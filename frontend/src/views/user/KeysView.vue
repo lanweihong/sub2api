@@ -1088,9 +1088,10 @@ import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { useAppStore } from '@/stores/app'
 import { useOnboardingStore } from '@/stores/onboarding'
 import type { ApiKey, ApiKeyBoundGroupBinding, Group, PublicSettings, UpdateApiKeyRequest } from '@/types'
+import { buildCcSwitchImportDeeplink, type CcSwitchClientType } from '@/utils/ccswitchImport'
 import { formatDateTime } from '@/utils/format'
 import { maskApiKey } from '@/utils/maskApiKey'
-import { computed, onMounted, onUnmounted, ref, type ComponentPublicInstance } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, type ComponentPublicInstance } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -1282,13 +1283,6 @@ const statusOptions = computed(() => [
   { value: 'active', label: t('common.active') },
   { value: 'inactive', label: t('common.inactive') }
 ])
-
-const shouldSubmitEditStatus = (key: ApiKey, status: 'active' | 'inactive') => {
-  if (key.status === 'quota_exhausted' || key.status === 'expired') {
-    return status === 'active'
-  }
-  return true
-}
 
 // Filter dropdown options
 const groupFilterOptions = computed(() => [

@@ -491,7 +491,7 @@ export interface PaginationConfig {
 
 // ==================== API Key & Group Types ====================
 
-export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity'
+export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok'
   | 'anthropic-compatible' | 'anthropic-zhipu' | 'anthropic-kimi' | 'anthropic-minimax' | 'anthropic-qwen' | 'anthropic-mimo'
 
 export type SubscriptionType = 'standard' | 'subscription'
@@ -716,7 +716,7 @@ export interface UpdateGroupRequest {
 
 // ==================== Account & Proxy Types ====================
 
-export type AccountPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity'
+export type AccountPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok'
   | 'anthropic-compatible' | 'anthropic-zhipu' | 'anthropic-kimi' | 'anthropic-minimax' | 'anthropic-qwen' | 'anthropic-mimo'
 export type AccountType = 'oauth' | 'setup-token' | 'apikey' | 'upstream' | 'bedrock' | 'service_account'
 export type OAuthAddMethod = 'oauth' | 'setup-token'
@@ -1386,6 +1386,29 @@ export interface CodexSessionImportResult {
   items?: CodexSessionImportItem[]
   warnings?: CodexSessionImportMessage[]
   errors?: CodexSessionImportMessage[]
+}
+
+export type PlatformQuotaPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok'
+export type PlatformQuotaWindow = 'daily' | 'weekly' | 'monthly'
+
+export interface PlatformQuotaItem {
+  platform: PlatformQuotaPlatform
+  daily_limit_usd: number | null
+  weekly_limit_usd: number | null
+  monthly_limit_usd: number | null
+  daily_usage_usd: number
+  weekly_usage_usd: number
+  monthly_usage_usd: number
+  daily_window_start?: string | null
+  weekly_window_start?: string | null
+  monthly_window_start?: string | null
+  daily_window_resets_at?: string | null
+  weekly_window_resets_at?: string | null
+  monthly_window_resets_at?: string | null
+}
+
+export interface PlatformQuotasResponse {
+  platform_quotas: PlatformQuotaItem[]
 }
 
 // ==================== Usage & Redeem Types ====================

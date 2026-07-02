@@ -538,6 +538,10 @@ const toFiniteNumber = (value: unknown): number => {
   return Number.isFinite(numberValue) ? numberValue : 0
 }
 
+const formatNumber = (value: number | undefined | null): string => {
+  return toFiniteNumber(value).toLocaleString()
+}
+
 const formatCost = (value?: number | null): string => {
   const normalized = Number.isFinite(value) ? Number(value) : 0
   if (normalized >= 1000) {

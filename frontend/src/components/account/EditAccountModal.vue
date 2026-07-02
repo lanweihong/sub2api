@@ -2864,6 +2864,19 @@ const openAICompactStatusKey = computed(() => {
   }
   return 'admin.accounts.openai.compactAuto'
 })
+const openAIResponsesStatusKey = computed(() => {
+  if (!props.account || props.account.platform !== 'openai') return ''
+  if (!openAITextGenerationCapabilityEnabled.value) {
+    return 'admin.accounts.openai.responsesUnavailable'
+  }
+  if (openAIResponsesMode.value === 'force_responses') {
+    return 'admin.accounts.openai.responsesModeForceResponses'
+  }
+  if (openAIResponsesMode.value === 'force_chat_completions') {
+    return 'admin.accounts.openai.responsesModeForceChatCompletions'
+  }
+  return 'admin.accounts.openai.responsesModeAuto'
+})
 
 // Computed: current preset mappings based on platform
 const presetMappings = computed(() => getPresetMappingsByPlatform(props.account?.platform || 'anthropic'))

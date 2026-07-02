@@ -188,6 +188,11 @@ const chartColors = [
   '#84cc16'
 ]
 
+const toFiniteNumber = (value: unknown): number => {
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) ? numberValue : 0
+}
+
 const displayGroupStats = computed(() => {
   if (!props.groupStats?.length) return []
 

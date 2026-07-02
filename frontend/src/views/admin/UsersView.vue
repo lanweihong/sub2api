@@ -1060,6 +1060,8 @@ const loadAllGroups = async () => {
   }
 }
 
+const allGroupsForApiKeyFilter = computed(() => allGroups.value)
+
 // Departments data for the department filter
 const allDepartments = ref<Department[]>([])
 const loadAllDepartments = async () => {
@@ -1127,6 +1129,7 @@ const filters = reactive({
   role: '',
   status: '',
   group: '',  // group name for fuzzy match, '' = all
+  apiKeyGroup: null as number | null,
   department: ''  // department id as string, '' = all
 })
 const activeAttributeFilters = reactive<Record<number, string>>({})

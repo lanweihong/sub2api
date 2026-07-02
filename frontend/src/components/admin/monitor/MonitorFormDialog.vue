@@ -211,7 +211,10 @@ import ProviderIcon from '@/components/user/monitor/ProviderIcon.vue'
 import { useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
 import { getDefaultApiKeyBaseUrl } from '@/utils/accountBaseUrl'
 import {
+  API_MODE_CHAT_COMPLETIONS,
+  API_MODE_RESPONSES,
   PROVIDER_ANTHROPIC,
+  PROVIDER_OPENAI,
   PROVIDERS,
   DEFAULT_INTERVAL_SECONDS,
 } from '@/constants/channelMonitor'
@@ -288,8 +291,6 @@ const form = reactive<MonitorForm>({
 // jitter 上限与后端校验一致：interval - jitter 不得低于最小检测间隔 15 秒。
 const maxJitterSeconds = computed<number>(() => Math.max(0, (form.interval_seconds || 0) - 15))
 
-let suppressFormWatchers = false
-
 // 可用模板列表（进入 dialog 时一次性拉取 cache；按 provider / api mode 过滤）。
 const templatesCache = ref<ChannelMonitorTemplate[]>([])
 const templatesLoading = ref(false)
@@ -334,13 +335,11 @@ const templateSelectValue = computed<string>({
     // 应用模板 = 拷贝快照
     const tpl = templatesCache.value.find((t) => t.id === id)
     if (tpl) {
-      suppressFormWatchers = true
       form.api_mode = normalizeAPIMode(tpl.api_mode)
       form.template_id = id
       form.extra_headers = { ...(tpl.extra_headers || {}) }
       form.body_override_mode = tpl.body_override_mode
       form.body_override = tpl.body_override ? { ...tpl.body_override } : null
-      suppressFormWatchers = false
     }
   },
 })
@@ -378,13 +377,6 @@ function templateOptionLabel(tpl: ChannelMonitorTemplate): string {
   return `${tpl.name} · ${t(labelKey)}`
 }
 
-function clearRequestSnapshot() {
-  form.template_id = null
-  form.extra_headers = {}
-  form.body_override_mode = 'off'
-  form.body_override = null
-}
-
 interface ProviderOption {
   value: Provider
   label: string
@@ -415,7 +407,6 @@ watch(() => form.provider, (provider, previousProvider) => {
 }, { flush: 'sync' })
 
 function resetForm() {
-  suppressFormWatchers = true
   form.name = ''
   form.provider = PROVIDER_ANTHROPIC
   form.endpoint = defaultEndpointForProvider(PROVIDER_ANTHROPIC)
@@ -430,11 +421,9 @@ function resetForm() {
   form.extra_headers = {}
   form.body_override_mode = 'off'
   form.body_override = null
-  suppressFormWatchers = false
 }
 
 function loadFromMonitor(m: ChannelMonitor) {
-  suppressFormWatchers = true
   form.name = m.name
   form.provider = m.provider
   form.api_mode = normalizeAPIMode(m.api_mode)
@@ -450,7 +439,6 @@ function loadFromMonitor(m: ChannelMonitor) {
   form.extra_headers = { ...(m.extra_headers || {}) }
   form.body_override_mode = m.body_override_mode || 'off'
   form.body_override = m.body_override ? { ...m.body_override } : null
-  suppressFormWatchers = false
 }
 
 // Re-sync form whenever the dialog is opened or the target monitor changes.

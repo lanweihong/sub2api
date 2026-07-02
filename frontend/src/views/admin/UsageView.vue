@@ -160,10 +160,6 @@ import UsageTable from '@/components/admin/usage/UsageTable.vue'; import UsageEx
 import UsageCleanupDialog from '@/components/admin/usage/UsageCleanupDialog.vue'
 import UsageDetailModal from '@/components/admin/usage/UsageDetailModal.vue'
 import UserBalanceHistoryModal from '@/components/admin/user/UserBalanceHistoryModal.vue'
-import OpsErrorLogTable from '@/views/admin/ops/components/OpsErrorLogTable.vue'
-import OpsErrorDetailModal from '@/views/admin/ops/components/OpsErrorDetailModal.vue'
-import { listErrorLogs } from '@/api/admin/ops'
-import type { OpsErrorLog } from '@/api/admin/ops'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'; import GroupDistributionChart from '@/components/charts/GroupDistributionChart.vue'; import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import EndpointDistributionChart from '@/components/charts/EndpointDistributionChart.vue'
 import CacheStatsChart from '@/components/charts/CacheStatsChart.vue'
@@ -391,7 +387,7 @@ const buildDashboardFilterParams = () => {
   }
 }
 
-const resetModelStatsCache = () => {
+const invalidateModelStatsCache = () => {
   requestedModelStats.value = []
   upstreamModelStats.value = []
   mappingModelStats.value = []
@@ -651,50 +647,6 @@ const loadSavedColumns = () => {
     })
   }
 }
-
-// Error tab state
-const activeTab = ref<'usage' | 'errors'>('usage')
-const errRows = ref<OpsErrorLog[]>([])
-const errLoading = ref(false)
-const errPage = ref(1)
-const errPageSize = ref(20)
-const errTotal = ref(0)
-const showErrorModal = ref(false)
-const selectedErrorId = ref<number | null>(null)
-
-// 注意：'YYYY-MM-DDT00:00:00' 无时区后缀，按本地时区解析后再转 UTC——与页面其它日期处理语义一致，刻意如此，勿改成 'T00:00:00Z'
-const toRFC3339 = (d: string | undefined, endOfDay = false): string | undefined =>
-  d ? new Date(d + (endOfDay ? 'T23:59:59.999' : 'T00:00:00')).toISOString() : undefined
-
-const loadAdminErrors = async () => {
-  errLoading.value = true
-  try {
-    const resp = await listErrorLogs({
-      page: errPage.value,
-      page_size: errPageSize.value,
-      view: 'all',
-      start_time: toRFC3339(filters.value.start_date),
-      end_time: toRFC3339(filters.value.end_date, true),
-      user_id: filters.value.user_id ?? undefined,
-      api_key_id: filters.value.api_key_id ?? undefined,
-      account_id: filters.value.account_id ?? undefined,
-      group_id: filters.value.group_id ?? undefined,
-      model: filters.value.model || undefined,
-    })
-    errRows.value = resp.items
-    errTotal.value = resp.total
-  } catch (error) {
-    console.error('Failed to load admin errors:', error)
-    appStore.showError(t('usage.errors.failedToLoad'))
-  } finally {
-    errLoading.value = false
-  }
-}
-
-const onErrPage = (p: number) => { errPage.value = p; loadAdminErrors() }
-const onErrPageSize = (s: number) => { errPageSize.value = s; errPage.value = 1; loadAdminErrors() }
-const openError = (id: number) => { selectedErrorId.value = id; showErrorModal.value = true }
-const switchToErrorsTab = () => { activeTab.value = 'errors'; if (errRows.value.length === 0) loadAdminErrors() }
 
 const showColumnDropdown = ref(false)
 const columnDropdownRef = ref<HTMLElement | null>(null)
