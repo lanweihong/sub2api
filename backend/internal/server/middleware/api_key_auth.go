@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -76,6 +77,10 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			return
 		}
 
+		// apiKey 已加载（含 User/Group）。即便后续因分组停用/Key 停用/用户停用/
+		// IP 限制等早退中断，也让 Ops 错误日志能回退取到 user/group/platform。
+		SetOpsFallbackAPIKey(c, apiKey)
+
 		// ── 3. 基础鉴权（始终执行） ─────────────────────────────────
 
 		// disabled / 未知状态 → 无条件拦截（expired 和 quota_exhausted 留给计费阶段）
@@ -90,9 +95,16 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		// 注意：错误信息故意模糊，避免暴露具体的 IP 限制机制
 		if len(apiKey.IPWhitelist) > 0 || len(apiKey.IPBlacklist) > 0 {
 			clientIP := ip.GetTrustedClientIP(c)
+			if cfg.TrustForwardedIPForAPIKeyACL() {
+				clientIP = ip.GetClientIP(c)
+			}
 			allowed, _ := ip.CheckIPRestrictionWithCompiledRules(clientIP, apiKey.CompiledIPWhitelist, apiKey.CompiledIPBlacklist)
 			if !allowed {
-				AbortWithError(c, 403, "ACCESS_DENIED", "Access denied")
+				if clientIP == "" {
+					clientIP = "unknown"
+				}
+				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonIPRestriction)
+				AbortWithError(c, 403, "ACCESS_DENIED", fmt.Sprintf("Access denied. Your IP is %s", clientIP))
 				return
 			}
 		}
@@ -106,6 +118,12 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		// 检查用户状态
 		if !apiKey.User.IsActive() {
 			AbortWithError(c, 401, "USER_INACTIVE", "User account is not active")
+			return
+		}
+		if abortIfAPIKeyGroupUnavailable(c, apiKey) {
+			return
+		}
+		if abortIfAPIKeyGroupNotAllowed(c, apiKey) {
 			return
 		}
 
@@ -262,6 +280,26 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 // GetAPIKeyFromContext 从上下文中获取API key
 func GetAPIKeyFromContext(c *gin.Context) (*service.APIKey, bool) {
 	value, exists := c.Get(string(ContextKeyAPIKey))
+	if !exists {
+		return nil, false
+	}
+	apiKey, ok := value.(*service.APIKey)
+	return apiKey, ok
+}
+
+// SetOpsFallbackAPIKey 记录已加载的 API Key，供 Ops 错误日志在鉴权早退时回退使用。
+// 与 ContextKeyAPIKey 区分：写入它不代表请求已通过鉴权，因此不影响 handler、
+// 审计日志等对“已鉴权”的判断。
+func SetOpsFallbackAPIKey(c *gin.Context, apiKey *service.APIKey) {
+	if c == nil || apiKey == nil {
+		return
+	}
+	c.Set(string(ContextKeyOpsFallbackAPIKey), apiKey)
+}
+
+// GetOpsFallbackAPIKey 读取 Ops 错误日志专用的回退 API Key。
+func GetOpsFallbackAPIKey(c *gin.Context) (*service.APIKey, bool) {
+	value, exists := c.Get(string(ContextKeyOpsFallbackAPIKey))
 	if !exists {
 		return nil, false
 	}

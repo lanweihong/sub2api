@@ -7,7 +7,7 @@
  * `useChannelMonitorFormat`.
  */
 
-import type { Provider, MonitorStatus } from '@/api/admin/channelMonitor'
+import type { APIMode, Provider, MonitorStatus } from '@/api/admin/channelMonitor'
 
 export const PROVIDER_OPENAI: Provider = 'openai'
 export const PROVIDER_ANTHROPIC: Provider = 'anthropic'
@@ -28,11 +28,19 @@ export const ANTHROPIC_COMPAT_PROVIDERS: readonly Provider[] = [
   PROVIDER_ANTHROPIC_MIMO,
 ]
 
+export const API_MODE_CHAT_COMPLETIONS: APIMode = 'chat_completions'
+export const API_MODE_RESPONSES: APIMode = 'responses'
+
 export const PROVIDERS: readonly Provider[] = [
   PROVIDER_ANTHROPIC,
   PROVIDER_OPENAI,
   PROVIDER_GEMINI,
   ...ANTHROPIC_COMPAT_PROVIDERS,
+]
+
+export const API_MODES: readonly APIMode[] = [
+  API_MODE_CHAT_COMPLETIONS,
+  API_MODE_RESPONSES,
 ]
 
 export const STATUS_OPERATIONAL: MonitorStatus = 'operational'

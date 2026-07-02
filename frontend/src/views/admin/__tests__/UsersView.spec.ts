@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import type { AdminUser } from '@/types'
@@ -90,6 +90,7 @@ const DataTableStub = {
   template: `
     <div>
       <div data-test="columns">{{ columns.map(col => col.key).join(',') }}</div>
+      <div data-test="row-order">{{ data.map(row => row.email).join(',') }}</div>
       <button data-test="sort-last-used" @click="$emit('sort', 'last_used_at', 'desc')">sort</button>
       <div v-for="row in data" :key="row.id" :data-test="'row-' + row.id">
         <slot name="cell-last_used_at" :value="row.last_used_at" :row="row" />
@@ -101,6 +102,7 @@ const DataTableStub = {
 
 describe('admin UsersView', () => {
   beforeEach(() => {
+    vi.useRealTimers()
     localStorage.clear()
 
     listUsers.mockReset()
@@ -121,6 +123,10 @@ describe('admin UsersView', () => {
     listEnabledDefinitions.mockResolvedValue([])
     getBatchUserAttributes.mockResolvedValue({ values: {} })
     authStoreState.isSuperAdmin = false
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('shows active, used, and created activity columns in order and requests last_used_at sort', async () => {

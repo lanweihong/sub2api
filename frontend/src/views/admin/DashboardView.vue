@@ -533,8 +533,9 @@ const formatTokens = (value: number | undefined): string => {
   return value.toLocaleString()
 }
 
-const formatNumber = (value: number): string => {
-  return value.toLocaleString()
+const toFiniteNumber = (value: unknown): number => {
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) ? numberValue : 0
 }
 
 const formatCost = (value?: number | null): string => {

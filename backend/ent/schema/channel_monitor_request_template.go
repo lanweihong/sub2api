@@ -77,5 +77,6 @@ func (ChannelMonitorRequestTemplate) Indexes() []ent.Index {
 	return []ent.Index{
 		// 同一 provider 内 name 唯一：允许 Anthropic + OpenAI 重名 "伪装官方客户端"。
 		index.Fields("provider", "name").Unique(),
+		index.Fields("provider", "api_mode"),
 	}
 }

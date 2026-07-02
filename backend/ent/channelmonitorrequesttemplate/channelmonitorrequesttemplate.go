@@ -22,6 +22,8 @@ const (
 	FieldName = "name"
 	// FieldProvider holds the string denoting the provider field in the database.
 	FieldProvider = "provider"
+	// FieldAPIMode holds the string denoting the api_mode field in the database.
+	FieldAPIMode = "api_mode"
 	// FieldDescription holds the string denoting the description field in the database.
 	FieldDescription = "description"
 	// FieldExtraHeaders holds the string denoting the extra_headers field in the database.
@@ -50,6 +52,7 @@ var Columns = []string{
 	FieldUpdatedAt,
 	FieldName,
 	FieldProvider,
+	FieldAPIMode,
 	FieldDescription,
 	FieldExtraHeaders,
 	FieldBodyOverrideMode,
@@ -115,6 +118,11 @@ func ByName(opts ...sql.OrderTermOption) OrderOption {
 // ByProvider orders the results by the provider field.
 func ByProvider(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldProvider, opts...).ToFunc()
+}
+
+// ByAPIMode orders the results by the api_mode field.
+func ByAPIMode(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAPIMode, opts...).ToFunc()
 }
 
 // ByDescription orders the results by the description field.
