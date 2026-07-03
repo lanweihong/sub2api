@@ -37,6 +37,10 @@ func (ChannelMonitor) Fields() []ent.Field {
 		field.String("provider").
 			NotEmpty().
 			MaxLen(50),
+		field.String("api_mode").
+			Default("chat_completions").
+			MaxLen(32).
+			Comment("OpenAI request protocol: chat_completions or responses; non-OpenAI uses chat_completions"),
 		field.String("endpoint").
 			NotEmpty().
 			MaxLen(500).

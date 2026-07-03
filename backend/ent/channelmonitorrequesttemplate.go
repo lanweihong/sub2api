@@ -26,6 +26,8 @@ type ChannelMonitorRequestTemplate struct {
 	Name string `json:"name,omitempty"`
 	// Provider holds the value of the "provider" field.
 	Provider string `json:"provider,omitempty"`
+	// OpenAI request protocol: chat_completions or responses; non-OpenAI uses chat_completions
+	APIMode string `json:"api_mode,omitempty"`
 	// Description holds the value of the "description" field.
 	Description string `json:"description,omitempty"`
 	// ExtraHeaders holds the value of the "extra_headers" field.

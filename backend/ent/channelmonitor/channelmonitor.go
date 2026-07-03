@@ -128,6 +128,10 @@ var (
 	NameValidator func(string) error
 	// ProviderValidator is a validator for the "provider" field. It is called by the builders before save.
 	ProviderValidator func(string) error
+	// DefaultAPIMode holds the default value on creation for the "api_mode" field.
+	DefaultAPIMode string
+	// APIModeValidator is a validator for the "api_mode" field. It is called by the builders before save.
+	APIModeValidator func(string) error
 	// EndpointValidator is a validator for the "endpoint" field. It is called by the builders before save.
 	EndpointValidator func(string) error
 	// APIKeyEncryptedValidator is a validator for the "api_key_encrypted" field. It is called by the builders before save.
