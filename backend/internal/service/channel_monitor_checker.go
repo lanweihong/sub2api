@@ -306,7 +306,11 @@ func anthropicCompatMonitorAdapter(spec *anthropiccompat.ProviderSpec) providerA
 //   - status: HTTP 状态码
 //   - err: 网络 / 序列化错误
 func callProvider(ctx context.Context, provider, endpoint, apiKey, model, prompt string, opts *CheckOptions) (extractedText, rawBody string, status int, err error) {
-	adapter, ok := resolveProviderAdapter(provider)
+	requestedAPIMode := checkAPIMode(opts)
+	if err := validateAPIMode(provider, requestedAPIMode); err != nil {
+		return "", "", 0, err
+	}
+	adapter, apiMode, ok := providerAdapterFor(provider, requestedAPIMode)
 	if !ok {
 		return "", "", 0, fmt.Errorf("unsupported provider %q", provider)
 	}
@@ -424,7 +428,7 @@ func buildRequestBody(adapter providerAdapter, provider, apiMode, model, prompt 
 	if err := json.Unmarshal(defaultBody, &defaultMap); err != nil {
 		return nil, fmt.Errorf("unmarshal default body for merge: %w", err)
 	}
-	deny := bodyMergeDenyList(provider)
+	deny := bodyMergeKeyDenyList[bodyMergeDenyKey(provider, apiMode)]
 	for k, v := range opts.BodyOverride {
 		if deny[k] {
 			continue

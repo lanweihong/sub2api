@@ -73,7 +73,7 @@ func (s *GatewayService) ForwardAnthropicCompat(
 	targetURL := strings.TrimRight(validatedBaseURL, "/") + spec.MessagesEndpointPath()
 
 	// 5. 构造请求体（可选 RequestMutator 做渠道差异化修改）
-	body := parsed.Body
+	body := parsed.Body.Bytes()
 	if spec.RequestMutator != nil {
 		body = spec.RequestMutator(body)
 	}

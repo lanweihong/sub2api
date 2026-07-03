@@ -42,11 +42,15 @@ const (
 	chatgptCodexURL = "https://chatgpt.com/backend-api/codex/responses"
 	// OpenAI Platform API for API Key accounts (fallback)
 	openaiPlatformAPIURL                  = "https://api.openai.com/v1/responses"
+	openaiPlatformAPIInputTokensURL       = "https://api.openai.com/v1/responses/input_tokens"
 	openAIPlatformChatCompletionsURL      = "https://api.openai.com/v1/chat/completions"
 	OpenAIUpstreamEndpointOverrideKey     = "openai_upstream_endpoint_override"
 	OpenAIUpstreamEndpointChatCompletions = "/v1/chat/completions"
 	openaiStickySessionTTL                = time.Hour // 粘性会话TTL
-	codexCLIUserAgent                     = "codex_cli_rs/0.125.0"
+	// 与真实 Codex CLI 的 User-Agent 结构对齐：
+	// {originator}/{version} ({OS} {OS_version}; {arch}) {terminal}
+	// 旧值 "codex_cli_rs/0.125.0" 缺少 OS/架构/终端后缀，易被上游指纹识别为非官方客户端。
+	codexCLIUserAgent = "codex_cli_rs/0.125.0 (Ubuntu 22.4.0; x86_64) xterm-256color"
 	// codex_cli_only 拒绝时单个请求头日志长度上限（字符）
 	codexCLIOnlyHeaderValueMaxBytes = 256
 
@@ -246,18 +250,27 @@ type OpenAIForwardResult struct {
 	ServiceTier *string
 	// ReasoningEffort is extracted from request body (reasoning.effort) or derived from model suffix.
 	// Stored for usage records display; nil means not provided / not applicable.
-	ReasoningEffort *string
-	Stream          bool
-	OpenAIWSMode    bool
-	ResponseHeaders http.Header
-	Duration        time.Duration
-	FirstTokenMs    *int
+	ReasoningEffort    *string
+	Stream             bool
+	OpenAIWSMode       bool
+	ResponseHeaders    http.Header
+	Duration           time.Duration
+	FirstTokenMs       *int
+	ClientDisconnect   bool
 
 	// 报文审计
 	ResponseBody      []byte // 非流式响应原始 body（仅 payloadLogging 开启时填充）
 	ResponseTruncated bool   // 响应体是否被截断
-	ImageCount        int
+	ImageCount         int
 	ImageSize         string
+	ImageInputSize    string
+	ImageOutputSize   string
+	ImageOutputSizes  []string
+	ImageSizeSource   string
+	ImageSizeBreakdown map[string]int
+
+	wsReplayInput       []json.RawMessage
+	wsReplayInputExists bool
 }
 
 type OpenAIWSRetryMetricsSnapshot struct {
@@ -401,11 +414,13 @@ func NewOpenAIGatewayService(
 	httpUpstream HTTPUpstream,
 	deferredService *DeferredService,
 	openAITokenProvider *OpenAITokenProvider,
-	settingService *SettingService,
-	payloadRepo UsageLogPayloadRepository,
+	grokTokenProvider *GrokTokenProvider,
 	resolver *ModelPricingResolver,
 	channelService *ChannelService,
 	balanceNotifyService *BalanceNotifyService,
+	settingService *SettingService,
+	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	payloadRepo UsageLogPayloadRepository,
 ) *OpenAIGatewayService {
 	svc := &OpenAIGatewayService{
 		accountRepo:         accountRepo,
@@ -3322,6 +3337,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		var firstTokenMs *int
 		var respBody []byte
 		var respTruncated bool
+		responseID := ""
 
 		// 报文审计：获取配置
 		var captureMaxSize int64
@@ -3341,6 +3357,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			firstTokenMs = streamResult.firstTokenMs
 			respBody = streamResult.responseBody
 			respTruncated = streamResult.responseTruncated
+			responseID = strings.TrimSpace(streamResult.responseID)
 			imageCount = streamResult.imageCount
 			imageOutputSizes = streamResult.imageOutputSizes
 		} else {
@@ -3351,6 +3368,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			usage = nonStreamResult.usage
 			respBody = nonStreamResult.responseBody
 			respTruncated = nonStreamResult.responseTruncated
+			responseID = strings.TrimSpace(nonStreamResult.responseID)
 			imageCount = nonStreamResult.imageCount
 			imageOutputSizes = nonStreamResult.imageOutputSizes
 		}
@@ -3370,6 +3388,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 		forwardResult := &OpenAIForwardResult{
 			RequestID:         resp.Header.Get("x-request-id"),
+			ResponseID:        responseID,
 			Usage:             *usage,
 			Model:             originalModel,
 			UpstreamModel:     upstreamModel,
@@ -3572,6 +3591,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	var firstTokenMs *int
 	var respBody []byte
 	var respTruncated bool
+	responseID := ""
 
 	// 报文审计：获取配置
 	var ptCaptureMaxSize int64
@@ -3591,6 +3611,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		firstTokenMs = result.firstTokenMs
 		respBody = result.responseBody
 		respTruncated = result.responseTruncated
+		responseID = strings.TrimSpace(result.responseID)
 		imageCount = result.imageCount
 		imageOutputSizes = result.imageOutputSizes
 	} else {
@@ -3601,6 +3622,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		usage = result.usage
 		respBody = result.responseBody
 		respTruncated = result.responseTruncated
+		responseID = strings.TrimSpace(result.responseID)
 		imageCount = result.imageCount
 		imageOutputSizes = result.imageOutputSizes
 	}
@@ -3619,10 +3641,11 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 
 	forwardResult := &OpenAIForwardResult{
 		RequestID:         resp.Header.Get("x-request-id"),
+		ResponseID:        responseID,
 		Usage:             *usage,
 		Model:             reqModel,
 		UpstreamModel:     upstreamPassthroughModel,
-		ServiceTier:       extractOpenAIServiceTierFromBody(body),
+		ServiceTier:       serviceTier,
 		ReasoningEffort:   reasoningEffort,
 		Stream:            reqStream,
 		OpenAIWSMode:      false,
@@ -3951,7 +3974,9 @@ func collectOpenAIPassthroughTimeoutHeaders(h http.Header) []string {
 type openaiStreamingResultPassthrough struct {
 	usage             *OpenAIUsage
 	firstTokenMs      *int
+	responseID        string
 	imageCount        int
+	imageOutputSizes  []string
 	responseBody      []byte
 	responseTruncated bool
 }
@@ -3959,7 +3984,9 @@ type openaiStreamingResultPassthrough struct {
 type openaiNonStreamingResultPassthrough struct {
 	*OpenAIUsage
 	usage             *OpenAIUsage
+	responseID        string
 	imageCount        int
+	imageOutputSizes  []string
 	responseBody      []byte
 	responseTruncated bool
 }
@@ -4038,7 +4065,7 @@ func openAIStreamTopLevelErrorMessage(payload []byte) (string, bool) {
 	return extractOpenAISSEErrorMessage(payload), true
 }
 
-func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
+func (s *OpenAIGatewayService) recordOpenAIStreamUpstreamError(
 	c *gin.Context,
 	account *Account,
 	passthrough bool,
@@ -4192,6 +4219,15 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	defer putSSEScannerBuf64K(scanBuf)
 
 	needModelReplace := strings.TrimSpace(originalModel) != "" && strings.TrimSpace(mappedModel) != "" && strings.TrimSpace(originalModel) != strings.TrimSpace(mappedModel)
+	resultWithUsage := func() *openaiStreamingResultPassthrough {
+		return &openaiStreamingResultPassthrough{
+			usage:            usage,
+			firstTokenMs:     firstTokenMs,
+			responseID:       responseID,
+			imageCount:       imageCounter.Count(),
+			imageOutputSizes: imageCounter.Sizes(),
+		}
+	}
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -4215,15 +4251,22 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			eventType := strings.TrimSpace(gjson.Get(trimmedData, "type").String())
 			if eventType == "response.failed" {
 				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
-				if !openAIStreamClientOutputStarted(c, clientOutputStarted) && openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
-					return makeResult(), s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage)
-				}
-				forceFlushFailedEvent = true
-				sawFailedEvent = true
-			} else if errMessage, ok := openAIStreamTopLevelErrorMessage(dataBytes); ok {
-				failedMessage = errMessage
-				if !openAIStreamClientOutputStarted(c, clientOutputStarted) && openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
-					return makeResult(), s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage)
+				// response.failed 自带上游已消耗的 usage（input token 通常已扣）；必须先解析
+				// 再打 cyber 标记，否则 mark 记到的是解析前的 0，导致流式 cyber 按 0 token 计费
+				// 而漏记真实用量。对齐 WS V2 / Chat 流式路径（均先解析 usage 再 Mark）。
+				s.parseSSEUsageBytes(dataBytes, usage)
+				if hit, code, msg := detectOpenAICyberPolicy(dataBytes); hit {
+					MarkOpsCyberPolicy(c, CyberPolicyMark{
+						Code:           code,
+						Message:        msg,
+						Body:           truncateString(string(dataBytes), 4096),
+						UpstreamStatus: http.StatusOK,
+						UpstreamInTok:  usage.InputTokens,
+						UpstreamOutTok: usage.OutputTokens,
+					})
+				} else if !openAIStreamClientOutputStarted(c, clientOutputStarted) && openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
+					return resultWithUsage(),
+						s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage)
 				}
 				forceFlushFailedEvent = true
 				sawFailedEvent = true
@@ -4386,9 +4429,11 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	}
 
 	return &openaiNonStreamingResultPassthrough{
-		OpenAIUsage:       usage,
-		usage:             usage,
+		OpenAIUsage:      usage,
+		usage:            usage,
+		responseID:       extractOpenAIResponseIDFromJSONBytes(body),
 		imageCount:        countOpenAIResponseImageOutputsFromJSONBytes(body),
+		imageOutputSizes: collectOpenAIResponseImageOutputSizesFromJSONBytes(body),
 		responseBody:      responseBody,
 		responseTruncated: responseTruncated,
 	}, nil
@@ -4461,9 +4506,11 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 		responseBody, responseTruncated = TruncateBytesWithFlag(body, captureMaxSize)
 	}
 	return &openaiNonStreamingResultPassthrough{
-		OpenAIUsage:       usage,
-		usage:             usage,
+		OpenAIUsage:      usage,
+		usage:            usage,
+		responseID:       extractOpenAIResponseIDFromJSONBytes(body),
 		imageCount:        imageCount,
+		imageOutputSizes: collectOpenAIImageOutputSizesFromSSEBody(bodyText),
 		responseBody:      responseBody,
 		responseTruncated: responseTruncated,
 	}, nil
@@ -4980,7 +5027,9 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 type openaiStreamingResult struct {
 	usage             *OpenAIUsage
 	firstTokenMs      *int
+	responseID        string
 	imageCount        int
+	imageOutputSizes  []string
 	responseBody      []byte
 	responseTruncated bool
 }
@@ -4988,7 +5037,9 @@ type openaiStreamingResult struct {
 type openaiNonStreamingResult struct {
 	*OpenAIUsage
 	usage             *OpenAIUsage
+	responseID        string
 	imageCount        int
+	imageOutputSizes  []string
 	responseBody      []byte
 	responseTruncated bool
 }
@@ -5026,6 +5077,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 	usage := &OpenAIUsage{}
 	imageCounter := newOpenAIImageOutputCounter()
 	var firstTokenMs *int
+	responseID := ""
 
 	// 报文审计：流式响应缓冲
 	var responseBuf *bytes.Buffer
@@ -5113,9 +5165,11 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 	needModelReplace := originalModel != mappedModel
 	makeStreamResult := func() *openaiStreamingResult {
 		r := &openaiStreamingResult{
-			usage:        usage,
-			firstTokenMs: firstTokenMs,
-			imageCount:   imageCounter.Count(),
+			usage:            usage,
+			firstTokenMs:     firstTokenMs,
+			responseID:       responseID,
+			imageCount:       imageCounter.Count(),
+			imageOutputSizes: imageCounter.Sizes(),
 		}
 		if responseBuf != nil && responseBuf.Len() > 0 {
 			captured := responseBuf.Bytes()
@@ -5129,6 +5183,10 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 		}
 		return r
 	}
+	streamOutputAccumulator := apicompat.NewBufferedResponseAccumulator()
+	streamImageOutputs := make([]json.RawMessage, 0, 1)
+	streamSeenImages := make(map[string]struct{})
+
 	finalizeStream := func() (*openaiStreamingResult, error) {
 		if !sawTerminalEvent {
 			if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
@@ -5685,33 +5743,65 @@ func extractOpenAIUsageFromJSONBytes(body []byte) (OpenAIUsage, bool) {
 	if len(body) == 0 || !gjson.ValidBytes(body) {
 		return OpenAIUsage{}, false
 	}
-	values := gjson.GetManyBytes(
-		body,
-		"usage.input_tokens",
-		"usage.output_tokens",
-		"usage.input_tokens_details.cached_tokens",
-		"usage.output_tokens_details.image_tokens",
-		"usage.prompt_tokens",
-		"usage.completion_tokens",
-		"usage.prompt_tokens_details.cached_tokens",
-	)
-	inputTokens := values[0]
-	if !inputTokens.Exists() {
-		inputTokens = values[4]
+	if usage, ok := openAIUsageFromGJSON(gjson.GetBytes(body, "usage")); ok {
+		return usage, true
 	}
-	outputTokens := values[1]
-	if !outputTokens.Exists() {
-		outputTokens = values[5]
+	return openAIUsageFromGJSON(gjson.GetBytes(body, "response.usage"))
+}
+
+func extractOpenAIResponseIDFromJSONBytes(body []byte) string {
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return ""
 	}
-	cacheReadTokens := values[2]
-	if !cacheReadTokens.Exists() {
-		cacheReadTokens = values[6]
+	if id := strings.TrimSpace(gjson.GetBytes(body, "id").String()); id != "" {
+		return id
+	}
+	return strings.TrimSpace(gjson.GetBytes(body, "response.id").String())
+}
+
+func (s *OpenAIGatewayService) bindHTTPResponseAccount(ctx context.Context, c *gin.Context, account *Account, responseID string) {
+	if s == nil || account == nil || account.ID <= 0 {
+		return
+	}
+	responseID = strings.TrimSpace(responseID)
+	if responseID == "" {
+		return
+	}
+	store := s.getOpenAIWSStateStore()
+	if store == nil {
+		return
+	}
+	groupID := getOpenAIGroupIDFromContext(c)
+	ttl := s.openAIWSResponseStickyTTL()
+	logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, store.BindResponseAccount(ctx, groupID, responseID, account.ID, ttl))
+}
+
+func openAIUsageFromGJSON(value gjson.Result) (OpenAIUsage, bool) {
+	if !value.Exists() || !value.IsObject() {
+		return OpenAIUsage{}, false
+	}
+	inputTokens := value.Get("input_tokens").Int()
+	if inputTokens == 0 {
+		inputTokens = value.Get("prompt_tokens").Int()
+	}
+	outputTokens := value.Get("output_tokens").Int()
+	if outputTokens == 0 {
+		outputTokens = value.Get("completion_tokens").Int()
+	}
+	cacheReadTokens := value.Get("input_tokens_details.cached_tokens").Int()
+	if cacheReadTokens == 0 {
+		cacheReadTokens = value.Get("prompt_tokens_details.cached_tokens").Int()
+	}
+	imageOutputTokens := value.Get("output_tokens_details.image_tokens").Int()
+	if imageOutputTokens == 0 {
+		imageOutputTokens = value.Get("completion_tokens_details.image_tokens").Int()
 	}
 	return OpenAIUsage{
-		InputTokens:          int(inputTokens.Int()),
-		OutputTokens:         int(outputTokens.Int()),
-		CacheReadInputTokens: int(cacheReadTokens.Int()),
-		ImageOutputTokens:    int(values[3].Int()),
+		InputTokens:              int(inputTokens),
+		OutputTokens:             int(outputTokens),
+		CacheCreationInputTokens: int(value.Get("cache_creation_input_tokens").Int()),
+		CacheReadInputTokens:     int(cacheReadTokens),
+		ImageOutputTokens:        int(imageOutputTokens),
 	}, true
 }
 
@@ -5744,7 +5834,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	usageValue, usageOK := extractOpenAIUsageFromJSONBytes(body)
 	if !usageOK {
 		if bodyLooksLikeSSE {
-			return s.handleSSEToJSON(resp, c, body, originalModel, mappedModel)
+			return s.handleSSEToJSON(resp, c, body, originalModel, mappedModel, captureMaxSize)
 		}
 		return nil, fmt.Errorf("parse response: invalid json response")
 	}
@@ -5773,9 +5863,11 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	}
 
 	return &openaiNonStreamingResult{
-		OpenAIUsage:       usage,
-		usage:             usage,
+		OpenAIUsage:      usage,
+		usage:            usage,
+		responseID:       extractOpenAIResponseIDFromJSONBytes(body),
 		imageCount:        countOpenAIResponseImageOutputsFromJSONBytes(body),
+		imageOutputSizes: collectOpenAIResponseImageOutputSizesFromJSONBytes(body),
 		responseBody:      responseBody,
 		responseTruncated: responseTruncated,
 	}, nil
@@ -5850,9 +5942,11 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 		responseBody, responseTruncated = TruncateBytesWithFlag(body, captureMaxSize)
 	}
 	return &openaiNonStreamingResult{
-		OpenAIUsage:       usage,
-		usage:             usage,
+		OpenAIUsage:      usage,
+		usage:            usage,
+		responseID:       extractOpenAIResponseIDFromJSONBytes(body),
 		imageCount:        imageCount,
+		imageOutputSizes: collectOpenAIImageOutputSizesFromSSEBody(bodyText),
 		responseBody:      responseBody,
 		responseTruncated: responseTruncated,
 	}, nil
@@ -6364,13 +6458,15 @@ type OpenAIRecordUsageInput struct {
 	IPAddress          string // 请求的客户端 IP 地址
 	RequestPayloadHash string
 	APIKeyService      APIKeyQuotaUpdater
-
+	QuotaPlatform      string // user×platform quota platform resolved by the handler before async billing.
+	// CyberBlocked 为 true 时把该用量行标记为 cyber（request_type=cyber），计费逻辑不变。
+	CyberBlocked bool
 	ChannelUsageFields
 
-	RequestPayload    []byte
-	ResponsePayload   []byte
-	RequestTruncated  bool
-	ResponseTruncated bool
+	RequestPayload      []byte
+	ResponsePayload     []byte
+	RequestTruncated    bool
+	ResponseTruncated   bool
 }
 
 // CyberPolicyUsageInput 是 cyber 拒绝、未走正常 RecordUsage 的请求记录用量的入参。
@@ -6394,6 +6490,11 @@ type CyberPolicyUsageInput struct {
 	RequestPayloadHash string
 	APIKeyService      APIKeyQuotaUpdater
 	ChannelUsageFields
+
+	RequestPayload    []byte
+	ResponsePayload   []byte
+	RequestTruncated  bool
+	ResponseTruncated bool
 }
 
 // RecordCyberPolicyUsageLog 为被上游 cyber_policy 拒绝、未走正常 RecordUsage 的请求

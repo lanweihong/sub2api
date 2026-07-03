@@ -43,14 +43,31 @@ func validateInterval(sec int) error {
 	return nil
 }
 
-// validateEndpointForProvider 按 provider 校验 endpoint。
-// Anthropic-compatible 平台的默认 Base URL 可能带 path 前缀（如 /api/anthropic），
-// 因此允许 path，但仍拒绝 query/fragment/http/私网地址。
-func validateEndpointForProvider(provider, ep string) error {
-	return validateEndpointWithPathPolicy(ep, IsAnthropicCompatPlatform(provider))
+// validateJitter 校验 jitter_seconds（调度 ± 随机抖动）：
+// 非负，且 interval - jitter 不得低于最小检测间隔，防止随机偏移后实际间隔过短打爆上游。
+func validateJitter(jitterSec, intervalSec int) error {
+	if jitterSec < 0 || intervalSec-jitterSec < monitorMinIntervalSeconds {
+		return ErrChannelMonitorInvalidJitter
+	}
+	return nil
 }
 
-func validateEndpointWithPathPolicy(ep string, allowPath bool) error {
+// validateEndpointForProvider 按 provider 校验 endpoint（兼容旧调用方）。
+// 注：当前统一走严格 origin 校验；Anthropic-compatible 平台的 path 前缀
+// 由调用方在 joinURL 阶段处理。
+func validateEndpointForProvider(provider, ep string) error {
+	return validateEndpoint(ep)
+}
+
+// validateEndpoint 校验 endpoint：
+//   - scheme 强制 https（拒绝 http，避免明文凭证 + 部分 SSRF 利用面）
+//   - 必须为 origin（无 path/query/fragment），防止用户填 https://api.openai.com/v1
+//     导致 joinURL 拼出 /v1/v1/chat/completions
+//   - hostname 不能是 localhost/metadata 等已知元数据 hostname
+//   - 解析所有 IP，任一落在 loopback/RFC1918/link-local/ULA 段即拒绝（防 SSRF）
+//
+// 错误信息不暴露具体 IP / hostname，避免泄露内网拓扑。
+func validateEndpoint(ep string) error {
 	ep = strings.TrimSpace(ep)
 	if ep == "" {
 		return ErrChannelMonitorInvalidEndpoint
@@ -65,7 +82,7 @@ func validateEndpointWithPathPolicy(ep string, allowPath bool) error {
 	if u.Host == "" {
 		return ErrChannelMonitorInvalidEndpoint
 	}
-	if !allowPath && u.Path != "" && u.Path != "/" {
+	if u.Path != "" && u.Path != "/" {
 		return ErrChannelMonitorEndpointPath
 	}
 	if u.RawQuery != "" || u.Fragment != "" {

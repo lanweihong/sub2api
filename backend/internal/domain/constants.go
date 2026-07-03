@@ -34,6 +34,7 @@ const (
 	PlatformOpenAI      = "openai"
 	PlatformGemini      = "gemini"
 	PlatformAntigravity = "antigravity"
+	PlatformGrok        = "grok"
 
 	// 通用 Anthropic-compatible 平台，用于承接未内置的兼容渠道。
 	PlatformAnthropicCompatible = "anthropic-compatible"

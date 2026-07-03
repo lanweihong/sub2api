@@ -287,6 +287,8 @@ type AccountUsageService struct {
 	geminiQuotaService      *GeminiQuotaService
 	antigravityQuotaFetcher *AntigravityQuotaFetcher
 	zhipuQuotaFetcher       *ZhipuQuotaFetcher
+	grokQuotaFetcher        *GrokQuotaFetcher
+	openAIQuotaService      *OpenAIQuotaService
 	cache                   *UsageCache
 	identityCache           IdentityCache
 	tlsFPProfileService     *TLSFingerprintProfileService
@@ -300,6 +302,8 @@ func NewAccountUsageService(
 	geminiQuotaService *GeminiQuotaService,
 	antigravityQuotaFetcher *AntigravityQuotaFetcher,
 	zhipuQuotaFetcher *ZhipuQuotaFetcher,
+	grokQuotaFetcher *GrokQuotaFetcher,
+	openAIQuotaService *OpenAIQuotaService,
 	cache *UsageCache,
 	identityCache IdentityCache,
 	tlsFPProfileService *TLSFingerprintProfileService,
@@ -311,6 +315,8 @@ func NewAccountUsageService(
 		geminiQuotaService:      geminiQuotaService,
 		antigravityQuotaFetcher: antigravityQuotaFetcher,
 		zhipuQuotaFetcher:       zhipuQuotaFetcher,
+		grokQuotaFetcher:        grokQuotaFetcher,
+		openAIQuotaService:      openAIQuotaService,
 		cache:                   cache,
 		identityCache:           identityCache,
 		tlsFPProfileService:     tlsFPProfileService,
@@ -357,6 +363,14 @@ func (s *AccountUsageService) GetUsage(ctx context.Context, accountID int64, for
 	// 智谱/Z.ai 平台：使用 ZhipuQuotaFetcher 获取用量（anthropic-zhipu）
 	if account.Platform == "anthropic-zhipu" {
 		usage, err := s.getZhipuUsage(ctx, account)
+		if err == nil {
+			s.tryClearRecoverableAccountError(ctx, account)
+		}
+		return usage, err
+	}
+
+	if account.Platform == PlatformGrok {
+		usage, err := s.getGrokUsage(ctx, account)
 		if err == nil {
 			s.tryClearRecoverableAccountError(ctx, account)
 		}

@@ -57,10 +57,33 @@ const (
 	PlatformAnthropicQwen    = domain.PlatformAnthropicQwen
 	PlatformAnthropicMimo    = domain.PlatformAnthropicMimo
 	AnthropicCompatPrefix    = domain.AnthropicCompatPrefix
+
+	PlatformGrok = domain.PlatformGrok
 )
 
 // IsAnthropicCompatPlatform 委托 domain.IsAnthropicCompatPlatform，在 service 层就近调用，减少包引用层次。
 var IsAnthropicCompatPlatform = domain.IsAnthropicCompatPlatform
+
+// AllowedQuotaPlatforms 是允许设置 user × platform quota 的平台列表（单一权威来源）。
+// ent/schema/user_platform_quota.go 的 Validate 函数独立维护（构建期约束），
+// 若新增平台需同步修改该 schema。
+var AllowedQuotaPlatforms = []string{
+	PlatformAnthropic,
+	PlatformOpenAI,
+	PlatformGemini,
+	PlatformAntigravity,
+	PlatformGrok,
+}
+
+// IsAllowedQuotaPlatform 报告 s 是否为合法的 quota platform 标识。
+func IsAllowedQuotaPlatform(s string) bool {
+	for _, p := range AllowedQuotaPlatforms {
+		if p == s {
+			return true
+		}
+	}
+	return false
+}
 
 // Account type constants
 const (

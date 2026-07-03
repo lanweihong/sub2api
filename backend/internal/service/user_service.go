@@ -74,7 +74,8 @@ type UserListFilters struct {
 	// When recursive department filtering is enabled, this should include
 	// the target department and all its descendant department IDs.
 	DepartmentIDs []int64
-	// IncludeSubscriptions controls whether ListWithFilters should load active subscriptions.
+
+	APIKeyGroupID int64 // 按用户拥有的 API Key 分组 ID 过滤（0=不过滤）	// IncludeSubscriptions controls whether ListWithFilters should load active subscriptions.
 	// For large datasets this can be expensive; admin list pages should enable it on demand.
 	// nil means not specified (default: load subscriptions for backward compatibility).
 	IncludeSubscriptions *bool
