@@ -82,15 +82,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 	}
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
 
-	// 多分组 Key：根据请求模型动态解析目标分组
-	apiKey, err = resolveMultiGroupIfNeeded(c, apiKey, reqModel)
-	if err != nil {
-		reqLog.Warn("gateway.responses.multi_group_resolve_failed", zap.Error(err))
-		h.responsesErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "No group matches the requested model: "+reqModel)
-		return
-	}
-
-	setOpsRequestContext(c, reqModel, reqStream, body)
+	setOpsRequestContext(c, reqModel, reqStream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
 	requestCtx := c.Request.Context()
 	if service.IsImageGenerationIntent("/v1/responses", reqModel, body) {
@@ -273,30 +265,8 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 
-		// 报文审计
-		var reqPayload, respPayload []byte
-		var reqTruncated, respTruncated bool
-		payloadLoggingEnabled := false
-		var payloadMaxRequestSize, payloadMaxResponseSize int64
-		if payloadCfg, _ := h.settingService.GetPayloadLoggingSettings(c.Request.Context()); payloadCfg != nil {
-			payloadLoggingEnabled = payloadCfg.Enabled
-			payloadMaxRequestSize = payloadCfg.MaxRequestSize
-			payloadMaxResponseSize = payloadCfg.MaxResponseSize
-			if payloadCfg.Enabled {
-				reqPayload, reqTruncated = service.TruncateBytesWithFlag(body, payloadCfg.MaxRequestSize)
-				if result.ResponseBody != nil {
-					// service 层已按 captureMaxSize 截断，直接信任其结果
-					respPayload = result.ResponseBody
-					respTruncated = result.ResponseTruncated
-				} else if result.ResponseTruncated {
-					respTruncated = true
-				}
-			}
-		}
-		logPayloadAuditCaptureDecision(reqLog, c.Request.Context(), "gateway.responses", requestPayloadHash, payloadLoggingEnabled, payloadMaxRequestSize, payloadMaxResponseSize, len(body), len(reqPayload), len(respPayload), reqTruncated, respTruncated, result.ResponseBody != nil)
-
-		h.submitUsageRecordTask(func(ctx context.Context) {
-			logPayloadAuditRecordTask(reqLog, ctx, "gateway.responses", requestPayloadHash, len(reqPayload), len(respPayload), reqTruncated, respTruncated)
+		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 				Result:             result,
 				QuotaPlatform:      quotaPlatform,
@@ -310,10 +280,6 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
 				APIKeyService:      h.apiKeyService,
-				RequestPayload:     reqPayload,
-				ResponsePayload:    respPayload,
-				RequestTruncated:   reqTruncated,
-				ResponseTruncated:  respTruncated,
 				ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
 			}); err != nil {
 				reqLog.Error("gateway.responses.record_usage_failed",

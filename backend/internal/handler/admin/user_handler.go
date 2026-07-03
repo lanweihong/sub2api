@@ -12,6 +12,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/handler/quotaview"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -27,31 +28,41 @@ type UserWithConcurrency struct {
 
 // UserHandler handles admin user management
 type UserHandler struct {
-	adminService       service.AdminService
-	concurrencyService *service.ConcurrencyService
-	deptService        service.DepartmentService
+	adminService          service.AdminService
+	concurrencyService    *service.ConcurrencyService
+	deptService           service.DepartmentService
+	userPlatformQuotaRepo service.UserPlatformQuotaRepository
+	billingCache          service.BillingCache
 }
 
 // NewUserHandler creates a new admin user handler
-func NewUserHandler(adminService service.AdminService, concurrencyService *service.ConcurrencyService, deptService service.DepartmentService) *UserHandler {
+func NewUserHandler(
+	adminService service.AdminService,
+	concurrencyService *service.ConcurrencyService,
+	deptService service.DepartmentService,
+	userPlatformQuotaRepo service.UserPlatformQuotaRepository,
+	billingCache service.BillingCache,
+) *UserHandler {
 	return &UserHandler{
-		adminService:       adminService,
-		concurrencyService: concurrencyService,
-		deptService:        deptService,
+		adminService:          adminService,
+		concurrencyService:    concurrencyService,
+		deptService:           deptService,
+		userPlatformQuotaRepo: userPlatformQuotaRepo,
+		billingCache:          billingCache,
 	}
 }
 
 // CreateUserRequest represents admin create user request
 type CreateUserRequest struct {
-	Email         string  `json:"email" binding:"required,email"`
-	Password      string  `json:"password" binding:"required,min=6"`
-	Username      string  `json:"username"`
-	Notes         string  `json:"notes"`
-	Balance       float64 `json:"balance"`
-	Concurrency   int     `json:"concurrency"`
-	RPMLimit      int     `json:"rpm_limit"`
-	AllowedGroups []int64 `json:"allowed_groups"`
-	DepartmentID  int64   `json:"department_id"`
+	Email         string   `json:"email" binding:"required,email"`
+	Password      string   `json:"password" binding:"required,min=6"`
+	Username      string   `json:"username"`
+	Notes         string   `json:"notes"`
+	Balance       *float64 `json:"balance"`
+	Concurrency   int      `json:"concurrency"`
+	RPMLimit      int      `json:"rpm_limit"`
+	AllowedGroups []int64  `json:"allowed_groups"`
+	DepartmentID  int64    `json:"department_id"`
 }
 
 // UpdateUserRequest represents admin update user request
@@ -139,6 +150,11 @@ func (h *UserHandler) List(c *gin.Context) {
 			}
 			ids = append(ids, descIDs...)
 			filters.DepartmentIDs = ids
+		}
+	}
+	if raw := strings.TrimSpace(c.Query("api_key_group_id")); raw != "" {
+		if id, parseErr := strconv.ParseInt(raw, 10, 64); parseErr == nil && id > 0 {
+			filters.APIKeyGroupID = id
 		}
 	}
 	sortBy := c.DefaultQuery("sort_by", "created_at")

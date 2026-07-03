@@ -41,14 +41,6 @@ func (h *GatewayHandler) GeminiV1BetaListModels(c *gin.Context) {
 	}
 	// 检查平台：优先使用强制平台（/antigravity 路由），否则要求 gemini 分组
 	forcePlatform, hasForcePlatform := middleware.GetForcePlatformFromContext(c)
-
-	// 多分组 Key：中间件已预解析，但 ListModels 无 URL 模型名时做一次 fallback
-	apiKey, err := resolveMultiGroupIfNeeded(c, apiKey, "")
-	if err != nil {
-		googleError(c, http.StatusBadRequest, "No group matches the requested model")
-		return
-	}
-
 	if !hasForcePlatform && (apiKey.Group == nil || apiKey.Group.Platform != service.PlatformGemini) {
 		googleError(c, http.StatusBadRequest, "API key group platform is not gemini")
 		return
@@ -60,8 +52,8 @@ func (h *GatewayHandler) GeminiV1BetaListModels(c *gin.Context) {
 		return
 	}
 
-	account, err2 := h.geminiCompatService.SelectAccountForAIStudioEndpoints(c.Request.Context(), apiKey.GroupID)
-	if err2 != nil {
+	account, err := h.geminiCompatService.SelectAccountForAIStudioEndpoints(c.Request.Context(), apiKey.GroupID)
+	if err != nil {
 		// 没有 gemini 账户，检查是否有 antigravity 账户可用
 		hasAntigravity, _ := h.geminiCompatService.HasAntigravityAccounts(c.Request.Context(), apiKey.GroupID)
 		if hasAntigravity {
@@ -69,13 +61,14 @@ func (h *GatewayHandler) GeminiV1BetaListModels(c *gin.Context) {
 			c.JSON(http.StatusOK, gemini.FallbackModelsList())
 			return
 		}
-		googleError(c, http.StatusServiceUnavailable, "No available Gemini accounts: "+err2.Error())
+		markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
+		googleError(c, http.StatusServiceUnavailable, "No available Gemini accounts: "+err.Error())
 		return
 	}
 
-	res, err2 := h.geminiCompatService.ForwardAIStudioGET(c.Request.Context(), account, "/v1beta/models")
-	if err2 != nil {
-		googleError(c, http.StatusBadGateway, err2.Error())
+	res, err := h.geminiCompatService.ForwardAIStudioGET(c.Request.Context(), account, "/v1beta/models")
+	if err != nil {
+		googleError(c, http.StatusBadGateway, err.Error())
 		return
 	}
 	if shouldFallbackGeminiModels(res) {
@@ -95,22 +88,14 @@ func (h *GatewayHandler) GeminiV1BetaGetModel(c *gin.Context) {
 	}
 	// 检查平台：优先使用强制平台（/antigravity 路由），否则要求 gemini 分组
 	forcePlatform, hasForcePlatform := middleware.GetForcePlatformFromContext(c)
+	if !hasForcePlatform && (apiKey.Group == nil || apiKey.Group.Platform != service.PlatformGemini) {
+		googleError(c, http.StatusBadRequest, "API key group platform is not gemini")
+		return
+	}
 
 	modelName := strings.TrimSpace(c.Param("model"))
 	if modelName == "" {
 		googleError(c, http.StatusBadRequest, "Missing model in URL")
-		return
-	}
-
-	// 多分组 Key：中间件已预解析，但做一次 fallback 确保分组解析完成
-	apiKey, err := resolveMultiGroupIfNeeded(c, apiKey, modelName)
-	if err != nil {
-		googleError(c, http.StatusBadRequest, "No group matches model: "+modelName)
-		return
-	}
-
-	if !hasForcePlatform && (apiKey.Group == nil || apiKey.Group.Platform != service.PlatformGemini) {
-		googleError(c, http.StatusBadRequest, "API key group platform is not gemini")
 		return
 	}
 
@@ -120,8 +105,8 @@ func (h *GatewayHandler) GeminiV1BetaGetModel(c *gin.Context) {
 		return
 	}
 
-	account, err2 := h.geminiCompatService.SelectAccountForAIStudioEndpoints(c.Request.Context(), apiKey.GroupID)
-	if err2 != nil {
+	account, err := h.geminiCompatService.SelectAccountForAIStudioEndpoints(c.Request.Context(), apiKey.GroupID)
+	if err != nil {
 		// 没有 gemini 账户，检查是否有 antigravity 账户可用
 		hasAntigravity, _ := h.geminiCompatService.HasAntigravityAccounts(c.Request.Context(), apiKey.GroupID)
 		if hasAntigravity {
@@ -129,13 +114,14 @@ func (h *GatewayHandler) GeminiV1BetaGetModel(c *gin.Context) {
 			c.JSON(http.StatusOK, gemini.FallbackModel(modelName))
 			return
 		}
-		googleError(c, http.StatusServiceUnavailable, "No available Gemini accounts: "+err2.Error())
+		markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
+		googleError(c, http.StatusServiceUnavailable, "No available Gemini accounts: "+err.Error())
 		return
 	}
 
-	res, err2 := h.geminiCompatService.ForwardAIStudioGET(c.Request.Context(), account, "/v1beta/models/"+modelName)
-	if err2 != nil {
-		googleError(c, http.StatusBadGateway, err2.Error())
+	res, err := h.geminiCompatService.ForwardAIStudioGET(c.Request.Context(), account, "/v1beta/models/"+modelName)
+	if err != nil {
+		googleError(c, http.StatusBadGateway, err.Error())
 		return
 	}
 	if shouldFallbackGeminiModel(modelName, res) {
@@ -167,26 +153,18 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		zap.Any("group_id", apiKey.GroupID),
 	)
 
-	modelName, action, err := parseGeminiModelAction(strings.TrimPrefix(c.Param("modelAction"), "/"))
-	if err != nil {
-		googleError(c, http.StatusNotFound, err.Error())
-		return
-	}
-
-	// 多分组 Key：中间件已预解析，此处做 fallback 确保分组解析完成
-	apiKey, err = resolveMultiGroupIfNeeded(c, apiKey, modelName)
-	if err != nil {
-		reqLog.Warn("gemini.multi_group_resolve_failed", zap.String("model", modelName), zap.Error(err))
-		googleError(c, http.StatusBadRequest, "No group matches model: "+modelName)
-		return
-	}
-
 	// 检查平台：优先使用强制平台（/antigravity 路由，中间件已设置 request.Context），否则要求 gemini 分组
 	if !middleware.HasForcePlatform(c) {
 		if apiKey.Group == nil || apiKey.Group.Platform != service.PlatformGemini {
 			googleError(c, http.StatusBadRequest, "API key group platform is not gemini")
 			return
 		}
+	}
+
+	modelName, action, err := parseGeminiModelAction(strings.TrimPrefix(c.Param("modelAction"), "/"))
+	if err != nil {
+		googleError(c, http.StatusNotFound, err.Error())
+		return
 	}
 
 	stream := action == "streamGenerateContent"
@@ -543,29 +521,10 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		requestPayloadHash := service.HashUsageRequestPayload(body)
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
-
-		// 报文审计
-		var reqPayload, respPayload []byte
-		var reqTruncated, respTruncated bool
-		payloadLoggingEnabled := false
-		var payloadMaxRequestSize, payloadMaxResponseSize int64
-		if payloadCfg, _ := h.settingService.GetPayloadLoggingSettings(c.Request.Context()); payloadCfg != nil {
-			payloadLoggingEnabled = payloadCfg.Enabled
-			payloadMaxRequestSize = payloadCfg.MaxRequestSize
-			payloadMaxResponseSize = payloadCfg.MaxResponseSize
-			if payloadCfg.Enabled {
-				reqPayload, reqTruncated = service.TruncateBytesWithFlag(body, payloadCfg.MaxRequestSize)
-				if result.ResponseBody != nil {
-					respPayload, respTruncated = service.TruncateBytesWithFlag(result.ResponseBody, payloadCfg.MaxResponseSize)
-				} else if result.ResponseTruncated {
-					respTruncated = true
-				}
-			}
-		}
-		logPayloadAuditCaptureDecision(reqLog, c.Request.Context(), "gemini.v1beta.models", requestPayloadHash, payloadLoggingEnabled, payloadMaxRequestSize, payloadMaxResponseSize, len(body), len(reqPayload), len(respPayload), reqTruncated, respTruncated, result.ResponseBody != nil)
-
-		h.submitUsageRecordTask(func(ctx context.Context) {
-			logPayloadAuditRecordTask(reqLog, ctx, "gemini.v1beta.models", requestPayloadHash, len(reqPayload), len(respPayload), reqTruncated, respTruncated)
+		// ForceCacheBilling 提前拍成标量，避免 worker 闭包保活 failover 状态里的响应体。
+		forceCacheBilling := fs.ForceCacheBilling
+		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsageWithLongContext(ctx, &service.RecordUsageLongContextInput{
 				Result:                result,
 				QuotaPlatform:         quotaPlatform,
@@ -582,10 +541,6 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 				LongContextMultiplier: 2.0,    // 超出部分双倍计费
 				ForceCacheBilling:     forceCacheBilling,
 				APIKeyService:         h.apiKeyService,
-				RequestPayload:        reqPayload,
-				ResponsePayload:       respPayload,
-				RequestTruncated:      reqTruncated,
-				ResponseTruncated:     respTruncated,
 				ChannelUsageFields:    channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
 			}); err != nil {
 				logger.L().With(

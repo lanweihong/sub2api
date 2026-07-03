@@ -30,6 +30,7 @@ func (r *channelMonitorRequestTemplateRepository) Create(ctx context.Context, t 
 	builder := client.ChannelMonitorRequestTemplate.Create().
 		SetName(t.Name).
 		SetProvider(t.Provider).
+		SetAPIMode(defaultAPIModeRepo(t.APIMode)).
 		SetDescription(t.Description).
 		SetExtraHeaders(emptyHeadersIfNilRepo(t.ExtraHeaders)).
 		SetBodyOverrideMode(defaultBodyModeRepo(t.BodyOverrideMode))
@@ -126,7 +127,7 @@ func (r *channelMonitorRequestTemplateRepository) ApplyToMonitors(ctx context.Co
 		Where(
 			channelmonitor.TemplateIDEQ(id),
 			channelmonitor.IDIn(monitorIDs...),
-			channelmonitor.ProviderEQ(channelmonitor.Provider(tpl.Provider)),
+			channelmonitor.ProviderEQ(tpl.Provider),
 			channelmonitor.APIModeEQ(defaultAPIModeRepo(tpl.APIMode)),
 		).
 		SetAPIMode(defaultAPIModeRepo(tpl.APIMode)).

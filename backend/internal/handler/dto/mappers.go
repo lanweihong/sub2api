@@ -30,7 +30,7 @@ func UserFromServiceShallow(u *service.User) *User {
 		BalanceNotifyExtraEmails:   NotifyEmailEntriesFromService(u.BalanceNotifyExtraEmails),
 		TotalRecharged:             u.TotalRecharged,
 		RPMLimit:                   u.RPMLimit,
-		DepartmentID:               u.DepartmentID,
+		DeletedAt:                  u.DeletedAt,
 	}
 }
 
@@ -74,32 +74,6 @@ func UserFromServiceAdmin(u *service.User) *AdminUser {
 	}
 }
 
-func DepartmentFromService(d *service.Department) *Department {
-	if d == nil {
-		return nil
-	}
-	return &Department{
-		ID:          d.ID,
-		Name:        d.Name,
-		Code:        d.Code,
-		Description: d.Description,
-		ParentID:    d.ParentID,
-		SortOrder:   d.SortOrder,
-		Status:      d.Status,
-		IsDefault:   d.IsDefault,
-		CreatedAt:   d.CreatedAt,
-		UpdatedAt:   d.UpdatedAt,
-	}
-}
-
-func DepartmentsFromService(depts []service.Department) []Department {
-	out := make([]Department, 0, len(depts))
-	for i := range depts {
-		out = append(out, *DepartmentFromService(&depts[i]))
-	}
-	return out
-}
-
 func APIKeyFromService(k *service.APIKey) *APIKey {
 	if k == nil {
 		return nil
@@ -130,18 +104,6 @@ func APIKeyFromService(k *service.APIKey) *APIKey {
 		Window7dStart: k.Window7dStart,
 		User:          UserFromServiceShallow(k.User),
 		Group:         GroupFromServiceShallow(k.Group),
-	}
-	// Map bound groups for multi-group keys
-	if len(k.BoundGroups) > 0 {
-		out.BoundGroups = make([]APIKeyBoundGroup, len(k.BoundGroups))
-		for i, bg := range k.BoundGroups {
-			out.BoundGroups[i] = APIKeyBoundGroup{
-				GroupID:       bg.GroupID,
-				Priority:      bg.Priority,
-				ModelPatterns: bg.ModelPatterns,
-				Group:         GroupFromServiceShallow(bg.Group),
-			}
-		}
 	}
 	if k.Window5hStart != nil && !service.IsWindowExpired(k.Window5hStart, service.RateLimitWindow5h) {
 		t := k.Window5hStart.Add(service.RateLimitWindow5h)
@@ -852,4 +814,28 @@ func PromoCodeUsageFromService(u *service.PromoCodeUsage) *PromoCodeUsage {
 		UsedAt:      u.UsedAt,
 		User:        UserFromServiceShallow(u.User),
 	}
+}
+func DepartmentFromService(d *service.Department) *Department {
+	if d == nil {
+		return nil
+	}
+	return &Department{
+		ID:          d.ID,
+		Name:        d.Name,
+		Code:        d.Code,
+		Description: d.Description,
+		ParentID:    d.ParentID,
+		SortOrder:   d.SortOrder,
+		Status:      d.Status,
+		IsDefault:   d.IsDefault,
+		CreatedAt:   d.CreatedAt,
+		UpdatedAt:   d.UpdatedAt,
+	}
+}
+func DepartmentsFromService(depts []service.Department) []Department {
+	out := make([]Department, 0, len(depts))
+	for i := range depts {
+		out = append(out, *DepartmentFromService(&depts[i]))
+	}
+	return out
 }

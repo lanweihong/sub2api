@@ -165,42 +165,24 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	reqStream := parsedReq.Stream
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
 
-	// 多分组 Key：根据请求模型动态解析目标分组
-	apiKey, err = resolveMultiGroupIfNeeded(c, apiKey, reqModel)
-	if err != nil {
-		reqLog.Warn("gateway.multi_group_resolve_failed", zap.Error(err))
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "No group matches the requested model: "+reqModel)
-		return
-	}
-
 	// 解析渠道级模型映射
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
 
-	// 提前确定平台，用于 Claude Code 逻辑的 guard（防止自定义 Anthropic-compatible 渠道被误拦截）
-	earlyPlatform := ""
-	if forcePlatform, ok := middleware2.GetForcePlatformFromContext(c); ok {
-		earlyPlatform = forcePlatform
-	} else if apiKey.Group != nil {
-		earlyPlatform = apiKey.Group.Platform
+	// 设置 max_tokens=1 + haiku 探测请求标识到 context 中
+	// 必须在 SetClaudeCodeClientContext 之前设置，因为 ClaudeCodeValidator 需要读取此标识进行绕过判断
+	if isMaxTokensOneHaikuRequest(reqModel, parsedReq.MaxTokens) {
+		ctx := service.WithIsMaxTokensOneHaikuRequest(c.Request.Context(), true, h.metadataBridgeEnabled())
+		c.Request = c.Request.WithContext(ctx)
 	}
 
-	// Claude Code 相关逻辑仅对官方 Anthropic 平台生效
-	// 对自定义 anthropic-* 渠道跳过：避免 checkClaudeCodeVersion 误拦截非 Claude Code 客户端
-	if !domain.IsAnthropicCompatPlatform(earlyPlatform) {
-		if isMaxTokensOneHaikuRequest(reqModel, parsedReq.MaxTokens, reqStream) {
-			ctx := service.WithIsMaxTokensOneHaikuRequest(c.Request.Context(), true, h.metadataBridgeEnabled())
-			c.Request = c.Request.WithContext(ctx)
-		}
-		// 检查是否为 Claude Code 客户端，设置到 context 中（复用已解析请求，避免二次反序列化）。
-		SetClaudeCodeClientContext(c, body, parsedReq)
-		// 版本检查：仅对 Claude Code 客户端，拒绝低于最低版本的请求
-		if !h.checkClaudeCodeVersion(c) {
-			return
-		}
-	}
-
-	// isClaudeCodeClient 可能在非 Anthropic-compat 平台中被设置；其他平台默认 false
+	// 检查是否为 Claude Code 客户端，设置到 context 中（复用已解析请求，避免二次反序列化）。
+	SetClaudeCodeClientContext(c, body, parsedReq)
 	isClaudeCodeClient := service.IsClaudeCodeClient(c.Request.Context())
+
+	// 版本检查：仅对 Claude Code 客户端，拒绝低于最低版本的请求
+	if !h.checkClaudeCodeVersion(c) {
+		return
+	}
 
 	// 在请求上下文中记录 thinking 状态，供 Antigravity 最终模型 key 推导/模型维度限流使用
 	c.Request = c.Request.WithContext(service.WithThinkingEnabled(c.Request.Context(), parsedReq.ThinkingEnabled, h.metadataBridgeEnabled()))
@@ -534,31 +516,11 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				result.ReasoningEffort = service.DefaultEffortForThinkingEnabled(protocolModel)
 			}
 
-			// 报文审计：捕获请求/响应报文
-			var reqPayload, respPayload []byte
-			var reqTruncated, respTruncated bool
-			payloadLoggingEnabled := false
-			var payloadMaxRequestSize, payloadMaxResponseSize int64
-			if payloadCfg, _ := h.settingService.GetPayloadLoggingSettings(c.Request.Context()); payloadCfg != nil {
-				payloadLoggingEnabled = payloadCfg.Enabled
-				payloadMaxRequestSize = payloadCfg.MaxRequestSize
-				payloadMaxResponseSize = payloadCfg.MaxResponseSize
-				if payloadCfg.Enabled {
-					reqPayload, reqTruncated = service.TruncateBytesWithFlag(body, payloadCfg.MaxRequestSize)
-					if result.ResponseBody != nil {
-						// service 层已按 captureMaxSize 截断，直接信任其结果
-						respPayload = result.ResponseBody
-						respTruncated = result.ResponseTruncated
-					} else if result.ResponseTruncated {
-						respTruncated = true
-					}
-				}
-			}
-			logPayloadAuditCaptureDecision(reqLog, c.Request.Context(), "anthropic.messages", requestPayloadHash, payloadLoggingEnabled, payloadMaxRequestSize, payloadMaxResponseSize, len(body), len(reqPayload), len(respPayload), reqTruncated, respTruncated, result.ResponseBody != nil)
-
 			// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
-			h.submitUsageRecordTask(func(ctx context.Context) {
-				logPayloadAuditRecordTask(reqLog, ctx, "anthropic.messages", requestPayloadHash, len(reqPayload), len(respPayload), reqTruncated, respTruncated)
+			// ForceCacheBilling 提前拍成标量，避免 worker 闭包保活 failover 状态里的响应体。
+			forceCacheBilling := fs.ForceCacheBilling
+			quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+			h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 				if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 					Result:             result,
 					QuotaPlatform:      quotaPlatform,
@@ -573,10 +535,6 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					RequestPayloadHash: requestPayloadHash,
 					ForceCacheBilling:  forceCacheBilling,
 					APIKeyService:      h.apiKeyService,
-					RequestPayload:     reqPayload,
-					ResponsePayload:    respPayload,
-					RequestTruncated:   reqTruncated,
-					ResponseTruncated:  respTruncated,
 					ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
 				}); err != nil {
 					logger.L().With(
@@ -833,11 +791,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// 记录 Forward 前已写入字节数，Forward 后若增加则说明 SSE 内容已发，禁止 failover
 			writerSizeBeforeForward := c.Writer.Size()
 			if account.Platform == service.PlatformAntigravity && account.Type != service.AccountTypeAPIKey {
-				result, err = h.antigravityGatewayService.Forward(requestCtx, c, account, body, hasBoundSession)
-			} else if domain.IsAnthropicCompatPlatform(account.Platform) {
-				// 自定义 Anthropic-compatible 渠道（anthropic-zhipu、anthropic-kimi 等）走旁路封装层
-				// 复用了前置鉴权、并发控制、粘性会话、账号选择等所有上层逻辑
-				result, err = h.gatewayService.ForwardAnthropicCompat(requestCtx, c, account, parsedReq)
+				result, err = h.antigravityGatewayService.Forward(requestCtx, c, account, attemptBody, hasBoundSession)
 			} else {
 				result, err = h.gatewayService.Forward(requestCtx, c, account, attemptParsedReq)
 			}
@@ -992,31 +946,11 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				result.ReasoningEffort = service.DefaultEffortForThinkingEnabled(protocolModel)
 			}
 
-			// 报文审计：捕获请求/响应报文
-			var reqPayload2, respPayload2 []byte
-			var reqTruncated2, respTruncated2 bool
-			payloadLoggingEnabled2 := false
-			var payloadMaxRequestSize2, payloadMaxResponseSize2 int64
-			if payloadCfg, _ := h.settingService.GetPayloadLoggingSettings(c.Request.Context()); payloadCfg != nil {
-				payloadLoggingEnabled2 = payloadCfg.Enabled
-				payloadMaxRequestSize2 = payloadCfg.MaxRequestSize
-				payloadMaxResponseSize2 = payloadCfg.MaxResponseSize
-				if payloadCfg.Enabled {
-					reqPayload2, reqTruncated2 = service.TruncateBytesWithFlag(body, payloadCfg.MaxRequestSize)
-					if result.ResponseBody != nil {
-						// service 层已按 captureMaxSize 截断，直接信任其结果
-						respPayload2 = result.ResponseBody
-						respTruncated2 = result.ResponseTruncated
-					} else if result.ResponseTruncated {
-						respTruncated2 = true
-					}
-				}
-			}
-			logPayloadAuditCaptureDecision(reqLog, c.Request.Context(), "anthropic.messages", requestPayloadHash, payloadLoggingEnabled2, payloadMaxRequestSize2, payloadMaxResponseSize2, len(body), len(reqPayload2), len(respPayload2), reqTruncated2, respTruncated2, result.ResponseBody != nil)
-
 			// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
-			h.submitUsageRecordTask(func(ctx context.Context) {
-				logPayloadAuditRecordTask(reqLog, ctx, "anthropic.messages", requestPayloadHash, len(reqPayload2), len(respPayload2), reqTruncated2, respTruncated2)
+			// ForceCacheBilling 提前拍成标量，避免 worker 闭包保活 failover 状态里的响应体。
+			forceCacheBilling := fs.ForceCacheBilling
+			quotaPlatform := service.QuotaPlatform(c.Request.Context(), currentAPIKey)
+			h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 				if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 					Result:             result,
 					QuotaPlatform:      quotaPlatform,
@@ -1031,10 +965,6 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					RequestPayloadHash: requestPayloadHash,
 					ForceCacheBilling:  forceCacheBilling,
 					APIKeyService:      h.apiKeyService,
-					RequestPayload:     reqPayload2,
-					ResponsePayload:    respPayload2,
-					RequestTruncated:   reqTruncated2,
-					ResponseTruncated:  respTruncated2,
 					ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
 				}); err != nil {
 					logger.L().With(
@@ -1065,45 +995,21 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	var groupID *int64
 	var platform string
 
+	if apiKey != nil && apiKey.Group != nil {
+		groupID = &apiKey.Group.ID
+		platform = apiKey.Group.Platform
+	}
 	if forcedPlatform, ok := middleware2.GetForcePlatformFromContext(c); ok && strings.TrimSpace(forcedPlatform) != "" {
 		platform = forcedPlatform
 	}
 
-	// 多分组 Key：聚合所有绑定分组的模型并集
-	if apiKey != nil && apiKey.HasBoundGroups() {
-		availableModels := h.getMultiGroupModels(c.Request.Context(), apiKey, platform)
-		if len(availableModels) > 0 {
-			models := make([]claude.Model, 0, len(availableModels))
-			for _, modelID := range availableModels {
-				models = append(models, claude.Model{
-					ID:          modelID,
-					Type:        "model",
-					DisplayName: modelID,
-					CreatedAt:   "2024-01-01T00:00:00Z",
-				})
-			}
-			c.JSON(http.StatusOK, gin.H{
-				"object": "list",
-				"data":   models,
-			})
-			return
-		}
-		// 多分组 Key 没有可用模型时，返回空列表（不回退到全局模型）
-		c.JSON(http.StatusOK, gin.H{
-			"object": "list",
-			"data":   []claude.Model{},
-		})
+	// Get available models from account configurations for the selected group platform.
+	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform)
+	if apiKey != nil && apiKey.Group != nil && apiKey.Group.CustomModelsListEnabled() {
+		availableModels = filterModelsByCustomList(availableModels, defaultModelIDsForPlatform(platform), apiKey.Group.ModelsListConfig.Models)
+		writeCustomModelsList(c, platform, availableModels)
 		return
 	}
-
-	if apiKey != nil && apiKey.Group != nil {
-		groupID = &apiKey.Group.ID
-		if platform == "" {
-			platform = apiKey.Group.Platform
-		}
-	}
-	// Get available models from account configurations (without platform filter)
-	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, "")
 
 	if len(availableModels) > 0 {
 		writeModelsList(c, availableModels)
@@ -1133,27 +1039,134 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	})
 }
 
-// getMultiGroupModels 聚合多分组 Key 的所有绑定分组模型并集
-func (h *GatewayHandler) getMultiGroupModels(ctx context.Context, apiKey *service.APIKey, forcePlatform string) []string {
-	modelSet := make(map[string]struct{})
-	for _, bg := range apiKey.BoundGroups {
-		if bg.Group == nil || !bg.Group.IsActive() {
+func writeModelsList(c *gin.Context, modelIDs []string) {
+	models := make([]claude.Model, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		models = append(models, claude.Model{
+			ID:          modelID,
+			Type:        "model",
+			DisplayName: modelID,
+			CreatedAt:   "2024-01-01T00:00:00Z",
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"object": "list",
+		"data":   models,
+	})
+}
+
+func writeCustomModelsList(c *gin.Context, platform string, modelIDs []string) {
+	if platform == service.PlatformOpenAI {
+		writeOpenAIModelsList(c, modelIDs)
+		return
+	}
+	writeModelsList(c, modelIDs)
+}
+
+func writeOpenAIModelsList(c *gin.Context, modelIDs []string) {
+	defaultsByID := make(map[string]openai.Model, len(openai.DefaultModels))
+	for _, model := range openai.DefaultModels {
+		defaultsByID[model.ID] = model
+	}
+
+	models := make([]openai.Model, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		if model, ok := defaultsByID[modelID]; ok {
+			models = append(models, model)
 			continue
 		}
-		if forcePlatform != "" && bg.Group.Platform != forcePlatform {
-			continue
-		}
-		models := h.gatewayService.GetAvailableModels(ctx, &bg.GroupID, forcePlatform)
-		for _, m := range models {
-			modelSet[m] = struct{}{}
+		models = append(models, openai.Model{
+			ID:          modelID,
+			Object:      "model",
+			Created:     1704067200,
+			OwnedBy:     "openai",
+			Type:        "model",
+			DisplayName: modelID,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"object": "list",
+		"data":   models,
+	})
+}
+
+func filterModelsByCustomList(availableModels, fallbackModels, selectedModels []string) []string {
+	if len(selectedModels) == 0 {
+		return availableModels
+	}
+	source := availableModels
+	if len(source) == 0 {
+		source = fallbackModels
+	}
+	if len(source) == 0 {
+		return nil
+	}
+
+	allowed := make([]string, 0, len(source))
+	for _, model := range source {
+		model = strings.TrimSpace(model)
+		if model != "" {
+			allowed = append(allowed, model)
 		}
 	}
 
-	result := make([]string, 0, len(modelSet))
-	for m := range modelSet {
-		result = append(result, m)
+	seen := make(map[string]struct{}, len(selectedModels))
+	filtered := make([]string, 0, len(selectedModels))
+	for _, model := range selectedModels {
+		model = strings.TrimSpace(model)
+		if model == "" {
+			continue
+		}
+		if !customModelsListAllowsModel(allowed, model) {
+			continue
+		}
+		if _, ok := seen[model]; ok {
+			continue
+		}
+		seen[model] = struct{}{}
+		filtered = append(filtered, model)
 	}
-	return result
+	return filtered
+}
+
+func customModelsListAllowsModel(availablePatterns []string, model string) bool {
+	for _, pattern := range availablePatterns {
+		if pattern == model {
+			return true
+		}
+		if strings.HasSuffix(pattern, "*") && strings.HasPrefix(model, strings.TrimSuffix(pattern, "*")) {
+			return true
+		}
+	}
+	return false
+}
+
+func defaultModelIDsForPlatform(platform string) []string {
+	switch platform {
+	case service.PlatformOpenAI:
+		return openai.DefaultModelIDs()
+	case service.PlatformGemini:
+		ids := make([]string, 0, len(geminicli.DefaultModels))
+		for _, model := range geminicli.DefaultModels {
+			ids = append(ids, model.ID)
+		}
+		return ids
+	case service.PlatformAntigravity:
+		models := antigravity.DefaultModels()
+		ids := make([]string, 0, len(models))
+		for _, model := range models {
+			ids = append(ids, model.ID)
+		}
+		return ids
+	case service.PlatformGrok:
+		return xai.DefaultModelIDs()
+	default:
+		ids := make([]string, 0, len(claude.DefaultModels))
+		for _, model := range claude.DefaultModels {
+			ids = append(ids, model.ID)
+		}
+		return ids
+	}
 }
 
 // AntigravityModels 返回 Antigravity 支持的全部模型
@@ -1750,12 +1763,6 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 		return
 	}
-	apiKey, err = resolveMultiGroupIfNeeded(c, apiKey, parsedReq.Model)
-	if err != nil {
-		reqLog.Warn("gateway.count_tokens_multi_group_resolve_failed", zap.Error(err))
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "No group matches the requested model: "+parsedReq.Model)
-		return
-	}
 	// count_tokens 走 messages 严格校验时，复用已解析请求，避免二次反序列化。
 	SetClaudeCodeClientContext(c, body, parsedReq)
 	reqLog = reqLog.With(zap.String("model", parsedReq.Model), zap.Bool("stream", parsedReq.Stream))
@@ -2107,37 +2114,6 @@ func (h *GatewayHandler) metadataBridgeEnabled() bool {
 		return true
 	}
 	return h.cfg.Gateway.OpenAIWS.MetadataBridgeEnabled
-}
-
-// resolveMultiGroupIfNeeded resolves the group for a multi-group API key based on the requested model.
-// For single-group keys (or keys without bound groups), this is a no-op.
-// Returns the (possibly updated) apiKey and an error if no group matches the model.
-func resolveMultiGroupIfNeeded(c *gin.Context, apiKey *service.APIKey, reqModel string) (*service.APIKey, error) {
-	if !middleware2.IsMultiGroupDeferred(c) {
-		return apiKey, nil
-	}
-
-	// Skip resolution for empty model; downstream validation will handle it
-	if reqModel == "" {
-		return apiKey, nil
-	}
-
-	resolvedGroup, err := service.ResolveGroupForModel(apiKey, reqModel)
-	if err != nil {
-		return apiKey, err
-	}
-	if resolvedGroup == nil {
-		return apiKey, nil
-	}
-
-	// Update the apiKey's group reference so downstream code sees the resolved group
-	apiKey.Group = resolvedGroup
-	apiKey.GroupID = &resolvedGroup.ID
-
-	// Set the group context for downstream services (account selection, billing, etc.)
-	middleware2.SetGroupContext(c, resolvedGroup)
-
-	return apiKey, nil
 }
 
 func (h *GatewayHandler) maybeLogCompatibilityFallbackMetrics(reqLog *zap.Logger) {

@@ -27,6 +27,7 @@ func NewChannelMonitorRequestTemplateHandler(templateService *service.ChannelMon
 type channelMonitorTemplateCreateRequest struct {
 	Name             string            `json:"name" binding:"required,max=100"`
 	Provider         string            `json:"provider" binding:"required"`
+	APIMode          string            `json:"api_mode" binding:"omitempty,oneof=chat_completions responses"`
 	Description      string            `json:"description" binding:"max=500"`
 	ExtraHeaders     map[string]string `json:"extra_headers"`
 	BodyOverrideMode string            `json:"body_override_mode" binding:"omitempty,oneof=off merge replace"`

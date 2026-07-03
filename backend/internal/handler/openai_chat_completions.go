@@ -82,15 +82,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
 
-	// 多分组 Key：根据请求模型动态解析目标分组
-	apiKey, err = resolveMultiGroupIfNeeded(c, apiKey, reqModel)
-	if err != nil {
-		reqLog.Warn("openai_chat_completions.multi_group_resolve_failed", zap.Error(err))
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "No group matches the requested model: "+reqModel)
-		return
-	}
-
-	setOpsRequestContext(c, reqModel, reqStream, body)
+	setOpsRequestContext(c, reqModel, reqStream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
 
 	if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIChat, reqModel, body); decision != nil && decision.Blocked {
@@ -304,30 +296,12 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 
 		userAgent := c.GetHeader("User-Agent")
 		clientIP := ip.GetClientIP(c)
-		requestPayloadHash := service.HashUsageRequestPayload(body)
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account)
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 
-		// 报文审计：捕获请求/响应 payload
-		var reqPayload, respPayload []byte
-		var reqTruncated, respTruncated bool
-		payloadLoggingEnabled := false
-		var payloadMaxRequestSize, payloadMaxResponseSize int64
-		if plCfg, _ := h.settingService.GetPayloadLoggingSettings(c.Request.Context()); plCfg != nil {
-			payloadLoggingEnabled = plCfg.Enabled
-			payloadMaxRequestSize = plCfg.MaxRequestSize
-			payloadMaxResponseSize = plCfg.MaxResponseSize
-			if plCfg.Enabled {
-				reqPayload, reqTruncated = service.TruncateBytesWithFlag(body, plCfg.MaxRequestSize)
-				respPayload = result.ResponseBody
-				respTruncated = result.ResponseTruncated
-			}
-		}
-		logPayloadAuditCaptureDecision(reqLog, c.Request.Context(), "openai.chat_completions", requestPayloadHash, payloadLoggingEnabled, payloadMaxRequestSize, payloadMaxResponseSize, len(body), len(reqPayload), len(respPayload), reqTruncated, respTruncated, result.ResponseBody != nil)
-
-		h.submitOpenAIUsageRecordTask(result, func(ctx context.Context) {
-			logPayloadAuditRecordTask(reqLog, ctx, "openai.chat_completions", requestPayloadHash, len(reqPayload), len(respPayload), reqTruncated, respTruncated)
+		cyberBlocked := service.GetOpsCyberPolicy(c) != nil
+		h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 				Result:             result,
 				APIKey:             apiKey,
@@ -338,12 +312,8 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 				UpstreamEndpoint:   upstreamEndpoint,
 				UserAgent:          userAgent,
 				IPAddress:          clientIP,
-				RequestPayloadHash: requestPayloadHash,
 				APIKeyService:      h.apiKeyService,
-				RequestPayload:     reqPayload,
-				ResponsePayload:    respPayload,
-				RequestTruncated:   reqTruncated,
-				ResponseTruncated:  respTruncated,
+				QuotaPlatform:      quotaPlatform,
 				ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
 				CyberBlocked:       cyberBlocked,
 			}); err != nil {
