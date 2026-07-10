@@ -58,6 +58,10 @@
                   :platform="binding.group?.platform"
                   :subscription-type="binding.group?.subscription_type"
                   :rate-multiplier="binding.group?.rate_multiplier"
+                  :peak-rate-enabled="binding.group?.peak_rate_enabled"
+                  :peak-start="binding.group?.peak_start"
+                  :peak-end="binding.group?.peak_end"
+                  :peak-rate-multiplier="binding.group?.peak_rate_multiplier"
                 />
               </div>
               <GroupBadge
