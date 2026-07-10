@@ -3452,15 +3452,6 @@
 
 <script setup lang="ts">
 import { adminAPI } from '@/api/admin'
-import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
-import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
-import { applyAntigravityProjectID, applyInterceptWarmup } from '@/components/account/credentialsBuilder'
-import BaseDialog from '@/components/common/BaseDialog.vue'
-import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import GroupSelector from '@/components/common/GroupSelector.vue'
-import ProxySelector from '@/components/common/ProxySelector.vue'
-import Select from '@/components/common/Select.vue'
-import Icon from '@/components/icons/Icon.vue'
 import { useQuotaNotifyState } from '@/composables/useQuotaNotifyState'
 import {
   useAccountOAuth,
