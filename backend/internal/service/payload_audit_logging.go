@@ -126,3 +126,53 @@ func persistPayloadAuditIfNeeded(
 		respTruncated,
 	)
 }
+
+// writePayloadBestEffort 最大努力写入报文，失败仅记日志
+func writePayloadBestEffort(ctx context.Context, component string, usageRequestID string, repo UsageLogPayloadRepository, usageLogID int64, reqPayload, respPayload []byte, reqTruncated, respTruncated bool) {
+	if repo == nil {
+		logPayloadAuditPersistenceSkipped(
+			ctx,
+			component,
+			usageRequestID,
+			"payload_repo_nil",
+			usageLogID,
+			len(reqPayload),
+			len(respPayload),
+			reqTruncated,
+			respTruncated,
+		)
+		return
+	}
+	payload := &UsageLogPayloadRecord{
+		UsageLogID:        usageLogID,
+		RequestBody:       stringPtrFromBytes(reqPayload),
+		ResponseBody:      stringPtrFromBytes(respPayload),
+		RequestTruncated:  reqTruncated,
+		ResponseTruncated: respTruncated,
+	}
+	payloadCtx, cancel := detachedBillingContext(ctx)
+	defer cancel()
+	if err := repo.Upsert(payloadCtx, payload); err != nil {
+		payloadAuditServiceLogger(component, ctx).Error("Write usage log payload failed",
+			zap.String("usage_request_id", strings.TrimSpace(usageRequestID)),
+			zap.Int64("usage_log_id", usageLogID),
+			zap.Int("request_payload_len", len(reqPayload)),
+			zap.Int("response_payload_len", len(respPayload)),
+			zap.Bool("request_truncated", reqTruncated),
+			zap.Bool("response_truncated", respTruncated),
+			zap.Error(err),
+		)
+		return
+	}
+	logPayloadAuditPersisted(
+		ctx,
+		component,
+		usageRequestID,
+		usageLogID,
+		len(reqPayload),
+		len(respPayload),
+		reqTruncated,
+		respTruncated,
+	)
+}
+

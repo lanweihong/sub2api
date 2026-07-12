@@ -41,3 +41,11 @@ func abortIfAPIKeyGroupNotAllowed(c *gin.Context, apiKey *service.APIKey) bool {
 	AbortWithError(c, 403, "GROUP_NOT_ALLOWED", "User is not allowed to use this group")
 	return true
 }
+
+func validateAPIKeyGroupAllowed(apiKey *service.APIKey) bool {
+	if apiKey == nil || apiKey.User == nil || apiKey.Group == nil || apiKey.HasBoundGroups() {
+		return true
+	}
+	return apiKey.User.CanBindGroup(apiKey.Group.ID, apiKey.Group.IsExclusive)
+}
+

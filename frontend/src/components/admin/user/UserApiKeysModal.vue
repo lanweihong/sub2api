@@ -58,6 +58,10 @@
                   :platform="binding.group?.platform"
                   :subscription-type="binding.group?.subscription_type"
                   :rate-multiplier="binding.group?.rate_multiplier"
+                  :peak-rate-enabled="binding.group?.peak_rate_enabled"
+                  :peak-start="binding.group?.peak_start"
+                  :peak-end="binding.group?.peak_end"
+                  :peak-rate-multiplier="binding.group?.peak_rate_multiplier"
                 />
               </div>
               <GroupBadge
@@ -66,6 +70,10 @@
                 :platform="key.group.platform"
                 :subscription-type="key.group.subscription_type"
                 :rate-multiplier="key.group.rate_multiplier"
+                :peak-rate-enabled="key.group.peak_rate_enabled"
+                :peak-start="key.group.peak_start"
+                :peak-end="key.group.peak_end"
+                :peak-rate-multiplier="key.group.peak_rate_multiplier"
               />
               <span v-else class="italic text-gray-400">{{ t('admin.users.none') }}</span>
             </div>
