@@ -440,7 +440,7 @@ func TestOpenAIGatewayServiceHandleResponsesImageOutputs_NonStreaming(t *testing
 		}`)),
 	}
 
-	result, err := svc.handleNonStreamingResponse(context.Background(), resp, c, &Account{ID: 1, Type: AccountTypeAPIKey}, "gpt-5.4", "gpt-5.4", 0)
+	result, err := svc.handleNonStreamingResponse(context.Background(), resp, c, &Account{ID: 1, Type: AccountTypeAPIKey}, "gpt-5.4", "gpt-5.4")
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -465,7 +465,7 @@ func TestOpenAIGatewayServiceHandleResponsesImageOutputs_Streaming(t *testing.T)
 		)),
 	}
 
-	result, err := svc.handleStreamingResponse(context.Background(), resp, c, &Account{ID: 1}, time.Now(), "gpt-5.5", "gpt-5.5", 0)
+	result, err := svc.handleStreamingResponse(context.Background(), resp, c, &Account{ID: 1}, time.Now(), "gpt-5.5", "gpt-5.5")
 
 	require.NoError(t, err)
 	require.NotNil(t, result)

@@ -821,7 +821,7 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
 		var raw json.RawMessage
 		if err := json.Unmarshal(body, &raw); err != nil {
-			return nil, nil, fmt.Errorf("invalid non-streaming JSON: %w", err)
+			return nil, nil, s.invalidNonStreamingJSONFailoverError(ctx, resp, account, body, err)
 		}
 	}
 

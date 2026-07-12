@@ -1518,7 +1518,7 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_StreamingSendsKeepaliveDuring
 		_ = pw.Close()
 	}()
 
-	result, err := svc.handleStreamingResponseAnthropicAPIKeyPassthrough(context.Background(), resp, c, &Account{ID: 8}, time.Now(), "claude-3-7-sonnet-20250219")
+	result, err := svc.handleStreamingResponseAnthropicAPIKeyPassthrough(context.Background(), resp, c, &Account{ID: 8}, time.Now(), "claude-3-7-sonnet-20250219", 0)
 	_ = pr.Close()
 	<-done
 
@@ -1561,7 +1561,7 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_StreamingKeepaliveDoesNotInte
 		_ = pw.Close()
 	}()
 
-	result, err := svc.handleStreamingResponseAnthropicAPIKeyPassthrough(context.Background(), resp, c, &Account{ID: 9}, time.Now(), "claude-3-7-sonnet-20250219")
+	result, err := svc.handleStreamingResponseAnthropicAPIKeyPassthrough(context.Background(), resp, c, &Account{ID: 9}, time.Now(), "claude-3-7-sonnet-20250219", 0)
 	_ = pr.Close()
 	<-done
 
