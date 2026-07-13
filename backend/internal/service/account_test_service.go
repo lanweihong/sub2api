@@ -21,6 +21,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/service/anthropiccompat"
 	// 触发所有 Anthropic-compatible 渠道 Provider 的 init() 注册
@@ -548,7 +549,6 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	var authToken string
 	var apiURL string
 	var isOAuth bool
-	useChatCompletionsDirect := false
 
 	if credentialAccount.IsOAuth() {
 		isOAuth = true
@@ -575,12 +575,16 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		if err != nil {
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Invalid base URL: %s", err.Error()))
 		}
-		useChatCompletionsDirect = account.IsOpenAICCForwardEnabled()
+		// 与网关真实转发一致：
+		// 1) 手动开启 openai_cc_direct_forward → CC 直通
+		// 2) 探测确认上游不支持 Responses → CC 直通
+		// 3) 其余走 Responses API
+		useChatCompletionsDirect := account.IsOpenAICCForwardEnabled() || !openai_compat.ShouldUseResponsesAPI(account.Extra)
 		if useChatCompletionsDirect {
-			apiURL = buildOpenAIChatCompletionsURL(normalizedBaseURL)
-		} else {
-			apiURL = buildOpenAIResponsesURL(normalizedBaseURL)
+			// 走独立 CC 测试函数，保持与真实 /v1/chat/completions 路径一致
+			return s.testOpenAIChatCompletionsConnection(c, account, testModelID, prompt, normalizedBaseURL, authToken)
 		}
+		apiURL = buildOpenAIResponsesURL(normalizedBaseURL)
 	} else {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Unsupported account type: %s", account.Type))
 	}
@@ -592,15 +596,13 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	c.Writer.Header().Set("X-Accel-Buffering", "no")
 	c.Writer.Flush()
 
-	// Create OpenAI test payload. API Key accounts with Chat Completions direct
-	// forward enabled should be tested against the same upstream API shape used
-	// by the gateway's normal /v1/chat/completions path.
-	var payload map[string]any
-	if useChatCompletionsDirect {
-		payload = createOpenAIChatCompletionsTestPayload(testModelID)
-	} else {
-		payload = createOpenAITestPayload(testModelID, isOAuth)
+	// Create OpenAI Responses API payload. OAuth accounts use ChatGPT Codex
+	// upstream and must apply the same model normalization as real forwarding.
+	upstreamTestModelID := testModelID
+	if isOAuth {
+		upstreamTestModelID = normalizeOpenAIModelForUpstream(credentialAccount, testModelID)
 	}
+	payload := createOpenAITestPayload(upstreamTestModelID, isOAuth)
 	payloadBytes, _ := json.Marshal(payload)
 
 	// Send test_start event
@@ -615,9 +617,6 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	// Set common headers
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+authToken)
-	if useChatCompletionsDirect {
-		req.Header.Set("Accept", "text/event-stream")
-	}
 
 	// Set OAuth-specific headers for ChatGPT internal API
 	if isOAuth {
@@ -668,10 +667,6 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
 		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body)))
-	}
-
-	if useChatCompletionsDirect {
-		return s.processOpenAIChatCompletionsTestResponse(c, resp)
 	}
 
 	// Process Responses SSE stream
