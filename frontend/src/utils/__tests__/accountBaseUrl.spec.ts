@@ -29,6 +29,7 @@ describe('accountBaseUrl', () => {
     expect(getDefaultApiKeyBaseUrl('openai')).toBe('https://api.openai.com')
     expect(getDefaultApiKeyBaseUrl('gemini')).toBe('https://generativelanguage.googleapis.com')
     expect(getDefaultApiKeyBaseUrl('antigravity')).toBe('https://cloudcode-pa.googleapis.com')
+    expect(getDefaultApiKeyBaseUrl('grok')).toBe('https://api.x.ai/v1')
     expect(getDefaultApiKeyBaseUrl('anthropic')).toBe('https://api.anthropic.com')
   })
 })

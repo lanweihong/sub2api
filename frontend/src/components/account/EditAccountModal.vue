@@ -41,14 +41,16 @@
                   ? 'https://generativelanguage.googleapis.com'
                   : account.platform === 'antigravity'
                     ? 'https://cloudcode-pa.googleapis.com'
-                    : requiresExplicitApiKeyBaseUrl(account.platform)
-                      ? t('admin.accounts.anthropicCompat.explicitBaseUrlPlaceholder')
-                      : isAnthropicCompatPlatform(account.platform)
-                      ? getDefaultApiKeyBaseUrl(account.platform)
-                      : 'https://api.anthropic.com'
+                    : account.platform === 'grok'
+                      ? 'https://api.x.ai/v1'
+                      : requiresExplicitApiKeyBaseUrl(account.platform)
+                        ? t('admin.accounts.anthropicCompat.explicitBaseUrlPlaceholder')
+                        : isAnthropicCompatPlatform(account.platform)
+                          ? getDefaultApiKeyBaseUrl(account.platform)
+                          : 'https://api.anthropic.com'
             "
           />
-          <p class="input-hint">{{ baseUrlHint }}</p>
+          <p v-if="baseUrlHint" class="input-hint">{{ baseUrlHint }}</p>
         </div>
         <div>
           <label class="input-label">{{ t('admin.accounts.apiKey') }}</label>
@@ -67,7 +69,9 @@
                   ? 'AIza...'
                   : account.platform === 'antigravity'
                     ? 'sk-...'
-                    : 'sk-ant-...'
+                    : account.platform === 'grok'
+                      ? 'xai-...'
+                      : 'sk-ant-...'
             "
           />
           <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
@@ -2637,6 +2641,7 @@ const baseUrlHint = computed(() => {
   if (!props.account) return t('admin.accounts.baseUrlHint')
   if (props.account.platform === 'openai') return t('admin.accounts.openai.baseUrlHint')
   if (props.account.platform === 'gemini') return t('admin.accounts.gemini.baseUrlHint')
+  if (props.account.platform === 'grok') return ''
   if (requiresExplicitApiKeyBaseUrl(props.account.platform)) return t('admin.accounts.anthropicCompat.explicitBaseUrlHint')
   if (isAnthropicCompatPlatform(props.account.platform)) return t('admin.accounts.anthropicCompat.baseUrlHint')
   return t('admin.accounts.baseUrlHint')

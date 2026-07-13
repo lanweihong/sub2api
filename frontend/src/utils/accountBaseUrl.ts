@@ -21,6 +21,7 @@ export function getDefaultApiKeyBaseUrl(platform?: AccountPlatform | string | nu
   if (platform === 'openai') return 'https://api.openai.com'
   if (platform === 'gemini') return 'https://generativelanguage.googleapis.com'
   if (platform === 'antigravity') return 'https://cloudcode-pa.googleapis.com'
+  if (platform === 'grok') return 'https://api.x.ai/v1'
   if (platform && isAnthropicCompatPlatform(platform)) {
     return anthropicCompatDefaultBaseUrls[platform] ?? ''
   }
